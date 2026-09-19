@@ -1,3 +1,8 @@
+# Sixth_Sense
+A caregiver assistance tool to sense and address emotional shifts
+
+---
+
 # 🧠 Welcome to the Fall 2026 SURGE Neuro Hackathon!
 
 Welcome to the **SURGE Neuro Hack Fall 2026**, where you'll get hands-on experience developing Brain-Computer Interfaces (BCIs) and analyzing neural data. Over the course of this weekend, you'll work in teams to prototype applications using EEG data. 

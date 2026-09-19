@@ -17,6 +17,12 @@ source .venv/bin/activate
 pip install streamlit pandas numpy scipy brainflow
 ```
 
+**Note:** If using Windows, run the following command for the second line instead.
+
+```bash
+.venv\Scripts\activate
+```
+
 If you already have a venv, just activate it and run the pip install line above.
 
 ## 2. Run the app

@@ -97,6 +97,8 @@ To change the layout, edit `CHANNEL_NAMES` in `emotion.py`.
 
 ## Files
 
+All under [`real-time-bci-stream/`](./real-time-bci-stream/):
+
 - `emotion.py` — valence/arousal estimation, baseline, smoothing, state logic
 - `hero.py` — animated state card (gradient crossfade, breathing orb, chime)
 - `board_connection.py` — BrainFlow/Cyton session handling
@@ -125,7 +127,7 @@ lsof /dev/cu.usbserial-*
 mode
 ```
 
-Real OpenBCI Cyton setup: see [`cyton_setup_instructions.md`](./cyton_setup_instructions.md).
+Real OpenBCI Cyton setup: see [`cyton_setup_instructions.md`](./real-time-bci-stream/cyton_setup_instructions.md).
 
 ## Progress report
 

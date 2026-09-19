@@ -5,25 +5,34 @@ Current state: Partially functional, built on simulated EEG data until we have t
 
 ---
 
-# How to Run the Application
+# Running the App
+
+Live comfort/discomfort visualizer. Estimates **valence** and **arousal** from
+8-channel EEG and shows a Stable / Moderate / Extreme state.
+
+Demonstration prototype — not a medical pain detector.
 
 ## 1. Install dependencies
 
+Works on macOS and Windows — same commands, only the venv activation line differs.
+
 From repo root:
 
+**macOS / Linux:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install streamlit pandas numpy scipy brainflow
 ```
 
-**Note:** If using Windows, run the following command for the second line instead.
-
-```bash
-.venv\Scripts\activate
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install streamlit pandas numpy scipy brainflow
 ```
 
-If you already have a venv, just activate it and run the pip install line above.
+Already have a venv? Just activate it and run the pip install line above.
 
 ## 2. Run the app
 
@@ -33,22 +42,110 @@ From repo root:
 python -m streamlit run real-time-bci-stream/app.py
 ```
 
-Browser opens automatically at `http://localhost:8501`.
+Browser opens at `http://localhost:8501`.
 
-## 3. Use it
+## 3. Session walkthrough
 
-1. Click **Start session**.
-2. Click **Generate sample** — creates a simulated EEG window and scores it.
-3. Adjust the comfort slider, click **Save result** to log it to `history.csv`.
-4. Click **Stop session** when done.
+Everything for setup lives in the **sidebar**; the live view is the
+**Dashboard** tab and state changes collect in **Saved events**.
+
+1. **Data source** — *Simulation mode* to try it with no hardware, or
+   *OpenBCI Cyton* for a real board.
+2. **Connect** (Cyton only) — close the OpenBCI GUI first. The serial port can
+   only be held by one process at a time. Default port is set for macOS
+   (`/dev/cu.usbserial-*`); on Windows, use the **Serial port** field to enter
+   the dongle's COM port instead (check Device Manager, e.g. `COM5`).
+3. **Record resting baseline** — participant sits still, eyes open, for 20
+   seconds. Required: valence and arousal are expressed relative to this
+   person's own resting signal, so numbers before calibration mean little.
+4. **Start session** — the dashboard now reads a window every second, no
+   clicking needed.
+5. **Saved events** — each Stable↔Moderate↔Extreme shift is logged with its
+   time and readings. Add a caregiver note and **Save note** to write it to
+   `history.csv`.
+
+In simulation mode a **Simulate discomfort** toggle appears during a session,
+which drives the state up so you can see a full shift without a participant.
+
+### Controls
+
+- **Mute** — silences the state-change chime.
+- **Night mode** — dark palette for the hero card.
+- **Refresh** — 1s / 2s / 5s per reading.
+
+## What the numbers mean
+
+| Reading | Source | Meaning |
+|---|---|---|
+| **Valence** | Frontal alpha asymmetry (Fp2 − Fp1) | Negative = withdrawal/negative affect |
+| **Arousal** | Frontal beta / (alpha + theta) | Higher = more activated |
+| **State** | Arousal, aggravated by negative valence | Stable / Moderate / Extreme |
+
+Both are smoothed (EMA) and the state uses hysteresis, so a single noisy window
+cannot flip the display.
+
+## Electrode placement
+
+Assumes the OpenBCI Cyton default 10-20 layout, in channel order:
+
+```
+Fp1  Fp2  C3  C4  P7  P8  O1  O2
+```
+
+**Fp1 and Fp2 matter most** — valence is unavailable without that frontal pair.
+To change the layout, edit `CHANNEL_NAMES` in `emotion.py`.
 
 ## Files
 
-- `simulated_data.py` — generates fake 8-channel EEG windows
-- `data_processing.py` — extracts band-power features, computes discomfort score
+- `emotion.py` — valence/arousal estimation, baseline, smoothing, state logic
+- `hero.py` — animated state card (gradient crossfade, breathing orb, chime)
+- `board_connection.py` — BrainFlow/Cyton session handling
+- `data_processing.py` — band powers and signal-quality check
+- `simulated_data.py` — synthetic 8-channel EEG for testing without hardware
 - `app.py` — Streamlit UI
 
+## Troubleshooting
+
+**`ANOTHER_BOARD_IS_CREATED_ERROR`** — a BrainFlow session is still open. The
+app clears orphan sessions automatically on connect; if it persists, make sure
+the OpenBCI GUI is fully quit, then Connect again.
+
+**`BOARD_NOT_READY_ERROR`** — the dongle opened but the board did not answer.
+Check the Cyton power switch is on, the dongle switch is on **GPIO 6**, and the
+board is in range.
+
+**Both apps fail to connect** — only one process can hold the serial port.
+Check who has it:
+
+```bash
+# macOS/Linux
+lsof /dev/cu.usbserial-*
+
+# Windows (PowerShell) — lists the port and whether it's in use
+mode
+```
+
 Real OpenBCI Cyton setup: see [`cyton_setup_instructions.md`](./cyton_setup_instructions.md).
+
+## Progress report
+
+- Simulated-EEG MVP working end to end: window generation → band-power
+  features → signal-quality check → Streamlit dashboard → CSV history.
+- Live dashboard rebuilt around valence/arousal (frontal alpha asymmetry +
+  beta/(alpha+theta)) instead of the earlier single discomfort score, with
+  EMA smoothing and hysteresis so state doesn't flicker on one noisy window.
+- Resting-baseline calibration added — values are meaningless without it, so
+  the UI blocks session start-adjacent actions until a baseline is recorded.
+- OpenBCI Cyton hardware path wired in (`board_connection.py`): explicit
+  Connect button, no auto-connect, orphan BrainFlow sessions cleared via
+  `release_all_sessions()` to avoid `ANOTHER_BOARD_IS_CREATED_ERROR` across
+  Streamlit reruns.
+- Verified running on **macOS** (primary dev machine) and **Windows**
+  (teammate) — same `pip install` set on both, only venv activation and
+  serial-port naming differ (`/dev/cu.usbserial-*` vs `COMx`).
+- Not yet done: real participant data collection with the physical board
+  (blocked on hardware availability during dev), trained classifier (still
+  rule-based thresholds).
 
 ---
 

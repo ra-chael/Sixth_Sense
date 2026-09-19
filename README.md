@@ -1,6 +1,49 @@
 # Sixth_Sense
 A caregiver assistance tool to sense and address emotional shifts
 
+Current state: Partially functional, built on simulated EEG data until we have the real thing.
+
+---
+
+# How to Run the Application
+
+## 1. Install dependencies
+
+From repo root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install streamlit pandas numpy scipy brainflow
+```
+
+If you already have a venv, just activate it and run the pip install line above.
+
+## 2. Run the app
+
+From repo root:
+
+```bash
+python -m streamlit run real-time-bci-stream/app.py
+```
+
+Browser opens automatically at `http://localhost:8501`.
+
+## 3. Use it
+
+1. Click **Start session**.
+2. Click **Generate sample** — creates a simulated EEG window and scores it.
+3. Adjust the comfort slider, click **Save result** to log it to `history.csv`.
+4. Click **Stop session** when done.
+
+## Files
+
+- `simulated_data.py` — generates fake 8-channel EEG windows
+- `data_processing.py` — extracts band-power features, computes discomfort score
+- `app.py` — Streamlit UI
+
+Real OpenBCI Cyton setup: see [`cyton_setup_instructions.md`](./cyton_setup_instructions.md).
+
 ---
 
 # 🧠 Welcome to the Fall 2026 SURGE Neuro Hackathon!

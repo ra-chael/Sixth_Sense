@@ -1,0 +1,286 @@
+"""The animated hero card.
+
+Streamlit cannot crossfade a gradient, breathe an orb or play a tone, so the
+card is a self-contained HTML/JS island that Python drives by handing it a
+state on each rerun. It keeps its own previous state in sessionStorage so it
+can tell a shift from a repaint and only chime on a real change.
+"""
+
+import json
+
+# components.html is deprecated in favour of st.iframe, but st.iframe only
+# accepts a URL or a Path — it cannot take an HTML string, and this card is
+# generated per rerun. Keeping components.html until there is a string-capable
+# replacement.
+import streamlit.components.v1 as components
+
+STATE_STYLE = {
+    "Stable": {
+        "core": "#6E9CBD",
+        "coreDark": "#7FAFCF",
+        "gradA": "#CFE1EC",
+        "gradB": "#E7F1F5",
+        "gradADark": "#2B3D4A",
+        "gradBDark": "#243038",
+        "breath": 4.5,
+        "label": "Stable",
+        "description": "Signals are steady. No sign of distress.",
+    },
+    "Moderate": {
+        "core": "#A57FC0",
+        "coreDark": "#BF9BD6",
+        "gradA": "#E7D9EF",
+        "gradB": "#F5EBBE",
+        "gradADark": "#3A2F45",
+        "gradBDark": "#413B28",
+        "breath": 3.4,
+        "label": "Moderate",
+        "description": "Arousal is rising. Worth a look.",
+    },
+    "Extreme": {
+        "core": "#CC8377",
+        "coreDark": "#DE9788",
+        "gradA": "#EFD1CB",
+        "gradB": "#F8E4DF",
+        "gradADark": "#48302C",
+        "gradBDark": "#3D2A27",
+        "breath": 2.6,
+        "label": "Extreme",
+        "description": "Sustained high arousal with negative valence.",
+    },
+}
+
+HEIGHT = 340
+
+
+def render(state, valence, arousal, quality, muted, night, elapsed):
+    payload = json.dumps(
+        {
+            "state": state,
+            "valence": valence,
+            "arousal": arousal,
+            "quality": quality,
+            "muted": bool(muted),
+            "night": bool(night),
+            "elapsed": elapsed,
+            "styles": STATE_STYLE,
+        }
+    )
+    components.html(_HTML.replace("__PAYLOAD__", payload), height=HEIGHT)
+
+
+_HTML = r"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  #card {
+    position: relative;
+    height: 320px;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    --border: #E8DFD1;
+    --text: #332B24;
+    --text-dim: #7A6D5F;
+  }
+  #card.night {
+    --border: #3B3340;
+    --text: #F1E9DE;
+    --text-dim: #AA9C8C;
+  }
+
+  /* Two stacked gradient layers; a shift crossfades between them, because
+     background-image itself does not tween. */
+  .layer {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 1.4s ease;
+  }
+  .layer.on { opacity: 1; }
+
+  #inner {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 34px;
+    padding: 0 38px;
+    color: var(--text);
+  }
+
+  #orbwrap { flex: 0 0 auto; position: relative; width: 132px; height: 132px; }
+  #orb {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    transition: background 1.2s ease, box-shadow 1.2s ease;
+    animation: breathe var(--breath, 4.5s) ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+  #face { position: absolute; inset: 0; }
+
+  #label {
+    font-size: 40px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  #desc { color: var(--text-dim); font-size: 15px; margin: 0 0 20px; }
+
+  #stats { display: flex; gap: 30px; }
+  .stat .k {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-dim);
+  }
+  .stat .v { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  #bar {
+    margin-top: 16px;
+    height: 5px;
+    width: 250px;
+    border-radius: 3px;
+    background: rgba(128,128,128,0.22);
+    overflow: hidden;
+  }
+  #fill { height: 100%; width: 0%; border-radius: 3px; transition: width 1s ease, background 1.2s ease; }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="layer" id="layerA"></div>
+  <div class="layer" id="layerB"></div>
+  <div id="inner">
+    <div id="orbwrap">
+      <div id="orb"></div>
+      <svg id="face" viewBox="0 0 132 132">
+        <circle cx="48" cy="56" r="5.5" fill="#fff" opacity="0.92"/>
+        <circle cx="84" cy="56" r="5.5" fill="#fff" opacity="0.92"/>
+        <path id="mouth" fill="none" stroke="#fff" stroke-width="4.5"
+              stroke-linecap="round" opacity="0.92"/>
+      </svg>
+    </div>
+    <div>
+      <p id="label">—</p>
+      <p id="desc"></p>
+      <div id="stats">
+        <div class="stat"><div class="k">Valence</div><div class="v" id="sv">—</div></div>
+        <div class="stat"><div class="k">Arousal</div><div class="v" id="sa">—</div></div>
+        <div class="stat"><div class="k">Signal</div><div class="v" id="sq">—</div></div>
+        <div class="stat"><div class="k">Session</div><div class="v" id="se">—</div></div>
+      </div>
+      <div id="bar"><div id="fill"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const D = __PAYLOAD__;
+const S = D.styles[D.state] || D.styles["Stable"];
+const night = D.night;
+
+const card = document.getElementById("card");
+if (night) card.classList.add("night");
+
+const gradA = night ? S.gradADark : S.gradA;
+const gradB = night ? S.gradBDark : S.gradB;
+const core  = night ? S.coreDark  : S.core;
+
+// Alternate which layer is on top so consecutive shifts keep crossfading
+// instead of the second one snapping.
+const slot = (Number(sessionStorage.getItem("slot")) || 0) ^ 1;
+sessionStorage.setItem("slot", String(slot));
+const incoming = document.getElementById(slot ? "layerA" : "layerB");
+const outgoing = document.getElementById(slot ? "layerB" : "layerA");
+
+const bg = `radial-gradient(110% 130% at 18% 12%, ${gradA} 0%, ${gradB} 62%, ${gradB} 100%)`;
+incoming.style.background = bg;
+outgoing.classList.remove("on");
+requestAnimationFrame(() => incoming.classList.add("on"));
+
+const orb = document.getElementById("orb");
+orb.style.setProperty("--breath", S.breath + "s");
+orb.style.background = `radial-gradient(circle at 34% 30%, ${core} 0%, ${shade(core, -22)} 100%)`;
+orb.style.boxShadow = `0 12px 40px ${core}59`;
+
+// Mouth curve: smile when valence is positive, frown when negative.
+const v = Math.max(-1, Math.min(1, D.valence));
+const curve = 80 - v * 16;
+document.getElementById("mouth").setAttribute("d", `M 44 82 Q 66 ${curve} 88 82`);
+
+document.getElementById("label").textContent = S.label;
+document.getElementById("desc").textContent = S.description;
+document.getElementById("sv").textContent = fmt(D.valence);
+document.getElementById("sa").textContent = fmt(D.arousal);
+document.getElementById("sq").textContent = D.quality;
+document.getElementById("se").textContent = D.elapsed;
+
+const fill = document.getElementById("fill");
+fill.style.background = core;
+fill.style.width = Math.round(((D.arousal + 1) / 2) * 100) + "%";
+
+// --- audio ---------------------------------------------------------------
+// Only a genuine change of state chimes. A rerun that repaints the same
+// state must stay silent, so the previous state is kept across reloads.
+const prev = sessionStorage.getItem("prevState");
+sessionStorage.setItem("prevState", D.state);
+
+if (prev && prev !== D.state && !D.muted) {
+  if (D.state === "Stable") {
+    // Recovery: a fuller ascending phrase, deliberately more rewarding.
+    play([523.25, 659.25, 783.99, 1046.5], 0.16);
+  } else {
+    play([392.0, 523.25], 0.18);
+  }
+}
+
+function play(notes, dur) {
+  let ctx;
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {
+    return;
+  }
+  notes.forEach((freq, i) => {
+    const t = ctx.currentTime + i * dur;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  });
+}
+
+function fmt(x) {
+  const s = x >= 0 ? "+" : "";
+  return s + Number(x).toFixed(2);
+}
+
+function shade(hex, pct) {
+  const n = parseInt(hex.slice(1), 16);
+  const cl = (c) => Math.max(0, Math.min(255, c + Math.round(255 * pct / 100)));
+  const r = cl((n >> 16) & 255), g = cl((n >> 8) & 255), b = cl(n & 255);
+  return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+}
+</script>
+</body>
+</html>
+"""

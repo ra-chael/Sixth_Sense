@@ -84,6 +84,95 @@ which drives the state up so you can see a full shift without a participant.
 Both are smoothed (EMA) and the state uses hysteresis, so a single noisy window
 cannot flip the display.
 
+## How it works
+
+One pass of the loop, electrode to screen. Everything below runs once per
+second while a session is active.
+
+```
+Cyton board
+   │  250 samples × 8 channels (1 second)
+   ▼
+board_connection.capture_window()      ← keeps only the EEG rows
+   │
+   ▼
+emotion.band_powers()                  ← Welch PSD, per channel
+   │  theta 4-8 Hz · alpha 8-13 Hz · beta 13-30 Hz
+   ▼
+emotion.raw_valence_arousal()
+   │  valence = ln(alpha_Fp2) − ln(alpha_Fp1)
+   │  arousal = beta / (alpha + theta), frontal average
+   ▼
+EmotionTracker.update()
+   │  1. subtract this participant's baseline  → z-scores
+   │  2. tanh squash                           → −1 … +1
+   │  3. EMA smooth                            → drop single-window noise
+   │  4. threshold with hysteresis             → Stable/Moderate/Extreme
+   ▼
+hero.render()                          ← gradient, orb, face, chime
+```
+
+### Why the baseline is mandatory
+
+Absolute alpha and beta power differ by an order of magnitude between people,
+between sessions, and between electrode placements — even gel thickness moves
+them. An arousal of `1.4` means nothing on its own; it only means something
+against *this participant's* resting `1.1`.
+
+So the 20-second baseline records resting mean and spread, and every later
+reading is expressed as "how many standard deviations from this person's
+own rest". Without it the app still runs, but the numbers are unreferenced
+and the state thresholds are arbitrary.
+
+### Why the smoothing
+
+EEG is noisy at one-second resolution. A jaw clench, a blink, or a loose
+electrode produces a spike indistinguishable from a real change. Two defenses:
+
+- **EMA** (`EMA_ALPHA = 0.25` in `emotion.py`) — each reading is 25% new
+  window, 75% history. A single bad window moves the display a little; a
+  sustained shift moves it fully within a few seconds.
+- **Hysteresis** (`HYSTERESIS = 0.08`) — once in a state, leaving it needs the
+  threshold to be exceeded by a margin. Stops the display flickering when a
+  value sits exactly on a boundary.
+
+Trade-off: the state lags real changes by roughly 3-5 seconds. That is
+deliberate — a caregiver-facing display that flickers is worse than one that
+is slightly late.
+
+### Why negative valence raises the level
+
+High arousal alone is ambiguous — excitement and distress look similar in
+beta power. The state calculation is:
+
+```python
+distress = arousal + max(0, -valence) * 0.5
+```
+
+Positive valence (approach, engagement) leaves arousal as-is. Negative
+valence (withdrawal) pushes the same arousal into a higher level. So a
+participant who is animated and positive reads Stable, while one equally
+activated but negative reads Moderate or Extreme.
+
+### Where to change things
+
+| Want to change | File | What to edit |
+|---|---|---|
+| Electrode layout | `emotion.py` | `CHANNEL_NAMES` |
+| State thresholds | `emotion.py` | `MODERATE_AROUSAL`, `EXTREME_AROUSAL` |
+| Smoothing amount | `emotion.py` | `EMA_ALPHA` (higher = twitchier) |
+| Baseline length | `app.py` | `BASELINE_WINDOWS` |
+| Colors, animation, chime | `hero.py` | `STATE_STYLE`, then the HTML block |
+| Frequency bands | `emotion.py` | `BANDS` |
+
+### Testing without hardware
+
+Simulation mode generates synthetic 8-channel EEG, and the **Simulate
+discomfort** toggle raises beta while suppressing right-frontal alpha — so it
+exercises both axes, not just arousal. The full Stable → Moderate → Extreme →
+Stable cycle is reproducible with no board attached, which is how the state
+logic was verified.
+
 ## Electrode placement
 
 Assumes the OpenBCI Cyton default 10-20 layout, in channel order:
@@ -97,14 +186,20 @@ To change the layout, edit `CHANNEL_NAMES` in `emotion.py`.
 
 ## Files
 
-All under [`real-time-bci-stream/`](./real-time-bci-stream/):
+All under [`real-time-bci-stream/`](./real-time-bci-stream/). Read them in this
+order — each one only depends on the ones above it:
 
-- `emotion.py` — valence/arousal estimation, baseline, smoothing, state logic
-- `hero.py` — animated state card (gradient crossfade, breathing orb, chime)
-- `board_connection.py` — BrainFlow/Cyton session handling
-- `data_processing.py` — band powers and signal-quality check
-- `simulated_data.py` — synthetic 8-channel EEG for testing without hardware
-- `app.py` — Streamlit UI
+| File | Role |
+|---|---|
+| `simulated_data.py` | Synthetic 8-channel EEG. Start here — it defines the window shape (`8 × 250`) everything else expects. |
+| `board_connection.py` | Opens/closes the Cyton over BrainFlow and returns the same window shape as the simulator, so the rest of the app cannot tell them apart. |
+| `data_processing.py` | Band powers and the signal-quality heuristic. |
+| `emotion.py` | The actual detection — valence, arousal, baseline, smoothing, state. Most of the science lives here. |
+| `hero.py` | The animated card, as a self-contained HTML/JS island. No detection logic. |
+| `app.py` | Streamlit UI and the once-per-second loop that wires the above together. |
+
+If you are changing **what is detected**, you want `emotion.py`. If you are
+changing **how it looks**, you want `hero.py`. They do not overlap.
 
 ## Troubleshooting
 
@@ -117,15 +212,48 @@ Check the Cyton power switch is on, the dongle switch is on **GPIO 6**, and the
 board is in range.
 
 **Both apps fail to connect** — only one process can hold the serial port.
-Check who has it:
+This is the most common problem: the OpenBCI GUI and this app cannot both be
+connected, and the GUI grabs the port even while only *sitting* on its start
+screen. Quit it fully, do not just stop the stream.
+
+Check who has the port:
 
 ```bash
-# macOS/Linux
+# macOS/Linux — prints the holding process, or nothing if free
 lsof /dev/cu.usbserial-*
-
-# Windows (PowerShell) — lists the port and whether it's in use
-mode
 ```
+
+```powershell
+# Windows (PowerShell) — list the COM ports that exist
+Get-CimInstance Win32_SerialPort | Select-Object DeviceID, Description
+
+# then confirm the GUI is not running
+Get-Process OpenBCI_GUI -ErrorAction SilentlyContinue
+```
+
+**Finding your port name**
+
+- **macOS** — `ls /dev/cu.usbserial-*`. Note the name changes if you use a
+  different dongle, so re-check it rather than trusting the default.
+- **Windows** — Device Manager → Ports (COM & LPT) → look for the FTDI entry,
+  e.g. `COM5`. Type that straight into the app's **Serial port** field.
+
+**Windows: `.venv\Scripts\Activate.ps1 cannot be loaded`** — PowerShell blocks
+scripts by default. Allow them for your user once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Or sidestep it by using `cmd` instead: `.venv\Scripts\activate.bat`.
+
+**No sound on state change** — browsers block audio until you interact with
+the page. Click anywhere in the app once, then trigger a shift. Also check
+**Mute** in the sidebar.
+
+**State never leaves Stable with a real participant** — almost always a
+baseline problem. If the baseline was recorded while the participant was
+already activated, their "rest" is set too high. Re-record it.
 
 Real OpenBCI Cyton setup: see [`cyton_setup_instructions.md`](./real-time-bci-stream/cyton_setup_instructions.md).
 

@@ -5,6 +5,44 @@ Current state: Partially functional, built on simulated EEG data until we have t
 
 ---
 
+# Quick start
+
+No hardware needed — this runs on simulated EEG.
+
+**macOS / Linux**
+```bash
+git clone https://github.com/ra-chael/Sixth_Sense.git
+cd Sixth_Sense
+python3 -m venv .venv && source .venv/bin/activate
+pip install streamlit pandas numpy scipy brainflow
+python -m streamlit run real-time-bci-stream/app.py
+```
+
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/ra-chael/Sixth_Sense.git
+cd Sixth_Sense
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install streamlit pandas numpy scipy brainflow
+python -m streamlit run real-time-bci-stream/app.py
+```
+
+Browser opens at `http://localhost:8501`. Then, in the app:
+
+1. Sidebar → leave **Data source** on *Simulation mode*
+2. Sidebar → **Record resting baseline** (20 seconds)
+3. **Start session**
+4. Toggle **Simulate discomfort** and watch the card shift Stable → Moderate → Extreme
+
+That is the whole demo loop. For a real board, electrode placement, or what
+the numbers mean, keep reading.
+
+> Activation fails on Windows with *"cannot be loaded"*? Run
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry.
+
+---
+
 # Running the App
 
 Live comfort/discomfort visualizer. Estimates **valence** and **arousal** from

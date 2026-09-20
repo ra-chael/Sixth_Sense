@@ -1,31 +1,87 @@
 import numpy as np
 
-SAMPLE_RATE = 250
+# Mirrors whatever the real pipeline is using, so synthetic windows are
+# generated at the same rate they will be analysed at. Imported as a module,
+# not a value: `from emotion import SAMPLE_RATE` would copy the number at
+# import time and miss any later update from the board.
+import emotion as _emotion
+
+ALPHA_FREQ = 10.0
+BETA_FREQ = 22.0
+GAMMA_FREQ = 38.0
 
 
-def generate_eeg_window(n_channels=8, n_samples=250, discomfort=False):
-    """Return simulated EEG window shaped (n_channels, n_samples)."""
-    t = np.arange(n_samples) / SAMPLE_RATE
+def generate_eeg_window(
+    n_channels=8,
+    n_samples=250,
+    discomfort=False,
+    arousal=None,
+    valence=None,
+    artifact=None,
+):
+    """Return a simulated EEG window shaped (n_channels, n_samples).
 
-    alpha_freq = 10.0
-    beta_freq = 22.0
+    arousal and valence, when given, drive the signal continuously in the
+    range -1..1 and override the `discomfort` flag. They are inverses of what
+    the estimator measures, so that asking for a given valence produces a
+    window the estimator reads back as roughly that value:
 
-    alpha_amp = 8.0
-    beta_amp = 6.0 if discomfort else 2.0
+      arousal -> fast-band (beta and gamma) amplitude against alpha/theta
+      valence -> right-frontal alpha relative to left (negative suppresses Fp2)
 
-    # Channels 0 and 1 stand in for Fp1/Fp2. Suppressing right-frontal alpha
-    # during discomfort gives the asymmetry the valence estimate reads, so the
-    # simulated signal exercises both axes and not just arousal.
-    asymmetry = {1: 0.45} if discomfort else {}
+    artifact is one of None, "blink" or "clench", and injects the transient
+    that the artifact guard is meant to reject.
+    """
+    t = np.arange(n_samples) / _emotion.SAMPLE_RATE
+
+    if arousal is None and valence is None:
+        # Legacy two-state behaviour.
+        arousal = 0.7 if discomfort else -0.4
+        valence = -0.6 if discomfort else 0.3
+
+    arousal = float(np.clip(arousal if arousal is not None else 0.0, -1.0, 1.0))
+    valence = float(np.clip(valence if valence is not None else 0.0, -1.0, 1.0))
+
+    # Map arousal onto the fast/slow amplitude balance the estimator reads.
+    # Gains are deliberately gentle: a steeper mapping saturated the estimator
+    # near the ends of the range, which made Moderate almost unreachable from
+    # the sliders and hid the middle of the scale.
+    a01 = (arousal + 1.0) / 2.0
+    alpha_amp = 9.0 - 2.6 * a01
+    beta_amp = 2.0 + 3.4 * a01
+    gamma_amp = 0.8 + 1.8 * a01
+
+    # Valence is an Fp2-vs-Fp1 alpha ratio: negative valence means relatively
+    # less right-frontal alpha. Channels 0 and 1 stand in for Fp1 and Fp2.
+    right_alpha_scale = float(np.exp(valence * 0.45))
+    asymmetry = {1: right_alpha_scale}
 
     window = np.zeros((n_channels, n_samples))
     for ch in range(n_channels):
         phase = np.random.uniform(0, 2 * np.pi)
-        alpha = alpha_amp * asymmetry.get(ch, 1.0) * np.sin(
-            2 * np.pi * alpha_freq * t + phase
+        scale = asymmetry.get(ch, 1.0)
+        signal = (
+            alpha_amp * scale * np.sin(2 * np.pi * ALPHA_FREQ * t + phase)
+            + beta_amp * np.sin(2 * np.pi * BETA_FREQ * t + phase)
+            + gamma_amp * np.sin(2 * np.pi * GAMMA_FREQ * t + phase)
+            + 6.0 * np.sin(2 * np.pi * 6.0 * t + phase)
         )
-        beta = beta_amp * np.sin(2 * np.pi * beta_freq * t + phase)
-        noise = np.random.normal(0, 3.0, n_samples)
-        window[ch] = alpha + beta + noise
+        window[ch] = signal + np.random.normal(0, 3.0, n_samples)
+
+    if artifact == "blink" and n_samples > 60:
+        # Brief, large, mostly frontal — the shape of a real eyeblink.
+        start = n_samples // 4
+        span = min(18, n_samples - start)
+        bump = 380.0 * np.hanning(span)
+        for ch in (0, 1):
+            if ch < n_channels:
+                window[ch, start : start + span] += bump
+    elif artifact == "clench" and n_samples > 80:
+        # Sustained broadband muscle activity across every channel.
+        start = n_samples // 3
+        span = min(70, n_samples - start)
+        window[:, start : start + span] += np.random.normal(
+            0, 170.0, (n_channels, span)
+        )
 
     return window

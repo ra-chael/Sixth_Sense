@@ -87,6 +87,10 @@ next step.
 
 No hardware needed — this runs on simulated EEG.
 
+## Demo video
+
+[Watch the Sixth Sense demo on YouTube](https://www.youtube.com/watch?v=vtmsxYgUuTw)
+
 **macOS / Linux**
 ```bash
 git clone https://github.com/ra-chael/Sixth_Sense.git

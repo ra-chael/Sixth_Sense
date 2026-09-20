@@ -231,6 +231,29 @@ confidence signal is worse than none.
 > scored, and the accelerometer shows whether the head was still — so a
 > caregiver can see that an arousal rise coincided with movement.
 
+**"What does the LLM do? Does it detect the emotion?"**
+> No — and that separation is deliberate. The detection is entirely signal
+> processing: band powers, alpha asymmetry, thresholds. The model never sees
+> EEG and never decides a state. It takes numbers we already computed —
+> valence, arousal, signal quality, whether the head moved — and phrases them
+> as one sentence for the caregiver log. If you removed it, every reading and
+> every state would be identical; you would just lose the plain-English line.
+
+**"Why not let the model interpret the EEG directly?"**
+> Because it cannot, and it would not tell you that. An LLM given band powers
+> will produce a confident-sounding interpretation with nothing behind it.
+> That would replace a pipeline we can explain with a guess we cannot. The
+> split we chose — signal processing decides, language model describes — keeps
+> every clinical-sounding claim traceable to a measurement.
+
+**"Is patient data going to a server?"**
+> No. The model runs locally through Ollama on this machine. Nothing leaves
+> it. For anything touching patient state that is the only defensible option.
+
+**"What if the model is not running?"**
+> Summaries are skipped and everything else works unchanged. It is additive,
+> never a dependency.
+
 **"Why Streamlit and not a notebook?"**
 > It's a real-time tool for a caregiver, not an analysis. A notebook can't be a
 > live glanceable display. The detection maths would be identical either way.

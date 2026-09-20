@@ -44,6 +44,17 @@ the numbers mean, keep reading.
 > Activation fails on Windows with *"cannot be loaded"*? Run
 > `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry.
 
+**Optional — plain-language event summaries.** Each state change can be
+described in one sentence for the caregiver log, written by a local model.
+Install [Ollama](https://ollama.com), then:
+
+```bash
+ollama pull qwen3:8b
+```
+
+Runs entirely on your machine; no data leaves it. Skip this and the app works
+exactly the same, minus the summaries.
+
 ---
 
 # Running the App
@@ -238,6 +249,27 @@ movement lets a caregiver see that difference. The reason it is not in the
 estimate: the threshold is uncalibrated, and a movement signal feeding the
 state could turn a restless patient into a false alarm.
 
+### Why a language model describes but never decides
+
+Each state change gets a one-line plain-language summary in the event log,
+written by a local model through Ollama.
+
+The boundary is strict and deliberate: **the model never sees EEG and never
+decides a state.** It receives numbers this pipeline already computed —
+valence, arousal, signal quality, whether the head moved — and phrases them
+for a caregiver. Remove it and every reading and every state is identical;
+only the English sentence is lost.
+
+The alternative — handing band powers to a model and asking what the patient
+feels — would produce confident text with nothing behind it, replacing a
+signal chain we can explain with a guess we cannot. Keeping detection in
+signal processing and language in the language model means every
+clinical-sounding phrase traces back to a measurement.
+
+It runs locally, so no participant data leaves the machine, and it is
+additive: if Ollama is not running the summaries are skipped and nothing else
+changes.
+
 ### Where to change things
 
 | Want to change | File | What to edit |
@@ -250,6 +282,7 @@ state could turn a restless patient into a false alarm.
 | Frequency bands | `emotion.py` | `BANDS`, `GAMMA_WEIGHT` |
 | Artifact sensitivity | `data_processing.py` | `ARTIFACT_UV`, `ARTIFACT_FRACTION` |
 | Movement threshold | `app.py` | `MOTION_THRESHOLD` |
+| Summary model / wording | `narrate.py` | `DEFAULT_MODEL`, `SYSTEM_PROMPT` |
 
 ### Testing without hardware
 
@@ -475,6 +508,7 @@ order — each one only depends on the ones above it:
 | `data_processing.py` | Band powers, signal quality, and the blink/muscle artifact guard. |
 | `emotion.py` | The actual detection — valence, arousal, baseline, smoothing, state. Most of the science lives here. |
 | `hero.py` | The animated card, as a self-contained HTML/JS island. No detection logic. |
+| `narrate.py` | Turns a logged state change into one caregiver-facing sentence via a local model. No detection logic. |
 | `theme.py` | Page styling — fonts, colours, and the Streamlit chrome overrides. |
 | `trend.py` | The Altair charts: the signal trend and the raw per-electrode traces. |
 | `app.py` | Streamlit UI and the once-per-second loop that wires the above together. |

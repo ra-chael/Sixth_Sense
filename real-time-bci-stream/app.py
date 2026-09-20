@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 import hero
+import narrate
 import theme
 import trend as trend_chart
 from simulated_data import generate_eeg_window
@@ -41,6 +42,7 @@ HISTORY_COLUMNS = [
     "valence",
     "arousal",
     "signal_quality",
+    "summary",
     "note",
 ]
 
@@ -222,6 +224,27 @@ with st.sidebar:
         "Refresh", options=[1.0, 2.0, 5.0], value=1.0, format_func=lambda s: f"{s:g}s"
     )
 
+    st.divider()
+    st.subheader("Event summaries")
+
+    # Checked once per rerun rather than per event, and the app works
+    # unchanged when it is unavailable.
+    llm_ready = narrate.available()
+
+    if llm_ready:
+        st.success(f"Local model ready ({narrate.DEFAULT_MODEL})")
+        st.caption(
+            "Each state change is phrased for the log. The model only "
+            "rewords measurements this pipeline computed — it never sees EEG "
+            "and never decides the state. Runs locally; nothing leaves this "
+            "machine."
+        )
+    else:
+        st.caption(
+            f"No local model — summaries are skipped. To enable: "
+            f"`ollama pull {narrate.DEFAULT_MODEL}`"
+        )
+
 # --- session controls --------------------------------------------------------
 
 with dashboard_tab:
@@ -344,6 +367,7 @@ with dashboard_tab:
                 st.session_state.prev_state is not None
                 and result["state"] != st.session_state.prev_state
             ):
+                motion_value = result.get("motion")
                 st.session_state.events.insert(
                     0,
                     {
@@ -354,6 +378,15 @@ with dashboard_tab:
                         "valence": result["valence"],
                         "arousal": result["arousal"],
                         "signal_quality": result["signal_quality"],
+                        "motion": motion_value,
+                        "moving": (
+                            motion_value is not None
+                            and motion_value > MOTION_THRESHOLD
+                        ),
+                        # Filled in on the Saved events tab, not here: the
+                        # model takes a second or two and this loop runs once
+                        # per second.
+                        "summary": None,
                         "note": "",
                     },
                 )
@@ -535,7 +568,18 @@ with events_tab:
             st.caption(
                 f"valence {event['valence']:+.2f} · arousal {event['arousal']:+.2f} "
                 f"· signal {event['signal_quality']}"
+                + (" · head moved" if event.get("moving") else "")
             )
+
+            # Narration is generated here rather than in the capture loop, and
+            # only once per event: the model takes a second or two, and the
+            # loop runs once per second.
+            if llm_ready and event.get("summary") is None:
+                with st.spinner("Writing summary…"):
+                    event["summary"] = narrate.narrate(event) or ""
+
+            if event.get("summary"):
+                st.info(event["summary"])
 
             note = st.text_area(
                 "Caregiver note", value=event["note"], key=f"note_{i}", height=80

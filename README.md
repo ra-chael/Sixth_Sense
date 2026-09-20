@@ -11,6 +11,8 @@ an OpenBCI Cyton, or on synthetic signal when no hardware is attached.
 
 Demonstration prototype — not a medical pain detector.
 
+Presentation link: https://canva.link/lmurex0wrrlrwzl
+
 ---
 
 # Overview

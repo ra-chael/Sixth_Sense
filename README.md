@@ -13,6 +13,8 @@ Demonstration prototype — not a medical pain detector.
 
 Presentation link: https://canva.link/lmurex0wrrlrwzl
 
+NOTE: Navigate to branch "Nelly" for updated UI version
+
 ---
 
 # Overview

@@ -1,3 +1,5 @@
+#This script is looking at the EEG data and calculating the valence and arousal based on the frontal alpha asymmetry and frontal beta/(alpha+theta) ratio. It also keeps track of the baseline and smoothed state across captures, and provides a method to update the estimates based on new windows of EEG data.
+
 """Valence/arousal estimation from an 8-channel Cyton window.
 
 Valence comes from frontal alpha asymmetry (right-minus-left alpha power at
@@ -37,13 +39,13 @@ HYSTERESIS = 0.08
 MIN_VALENCE_STD = 0.25
 MIN_AROUSAL_STD = 0.05
 
-STATES = ["Stable", "Moderate", "Extreme"]
+STATES = ["Stable", "Elevated", "High Distress Signal"]
 
 # Arousal thresholds on the normalized (baseline-relative) scale.
 MODERATE_AROUSAL = 0.35
 EXTREME_AROUSAL = 0.70
 
-
+# this method is creating an array aswell as a window for the sample rate
 def band_powers(window):
     """Per-channel power in each band. window is (n_channels, n_samples)."""
     window = np.asarray(window, dtype=float)
@@ -56,14 +58,14 @@ def band_powers(window):
         powers[name] = psd[..., mask].mean(axis=-1)
     return powers
 
-
+# this method is getting the index of a channel name in the channel_names list. 
 def _channel_index(name, channel_names):
     try:
         return channel_names.index(name)
     except ValueError:
         return None
 
-
+# this method is creating windows for the valence and arousal of the EEG data. It calculates the log-ratio of right to left frontal alpha for valence and the ratio of frontal beta to slower activity for arousal. It returns the valence, arousal, and per-channel powers.
 def raw_valence_arousal(window, channel_names=None):
     """Unnormalized valence and arousal for a single window.
 
@@ -95,7 +97,7 @@ def raw_valence_arousal(window, channel_names=None):
 
     return valence, arousal, powers
 
-
+# this class is tracking the baseline and smoothed state across captures. It holds the baseline values for valence and arousal, as well as the exponentially smoothed values for valence and arousal. It also keeps track of the current state (Stable, Elevated, or High Distress Signal) based on the smoothed values.
 class EmotionTracker:
     """Holds the baseline and the smoothed state across captures."""
 
@@ -134,6 +136,7 @@ class EmotionTracker:
 
     # -- per-window update ------------------------------------------------
 
+    # this method updates the valence and arousal estimates based on a new window of EEG data
     def update(self, window):
         valence, arousal, powers = raw_valence_arousal(window, self.channel_names)
 
@@ -172,6 +175,7 @@ class EmotionTracker:
             },
         }
 
+    # this method maps the arousal onto a level based on the current state and hysteresis. It returns "High Distress Signal" if the arousal exceeds the extreme threshold, "Elevated" if it exceeds the moderate threshold, and "Stable" otherwise.
     def _next_state(self, arousal, valence):
         """Map arousal (with negative valence aggravating it) onto a level.
 
@@ -179,7 +183,8 @@ class EmotionTracker:
         exceeded by HYSTERESIS, so a value sitting on a boundary holds.
         """
         # Negative valence pushes the same arousal into a higher level —
-        # high arousal with positive valence is excitement, not distress.
+        # Positive valence may indicate that elevated arousal is not distress.
+        # The resulting state is an experimental signal estimate, not a diagnosis.
         distress = arousal + max(0.0, -valence) * 0.5
 
         current = STATES.index(self.state)
@@ -192,12 +197,12 @@ class EmotionTracker:
             extreme -= HYSTERESIS
 
         if distress >= extreme:
-            return "Extreme"
+            return "High Distress Signal"
         if distress >= moderate:
-            return "Moderate"
+            return "Elevated"
         return "Stable"
 
-
+# this method returning the value of the moving average of the previous value and the current value based on the alpha parameter.
 def _ema(previous, value, alpha):
     if previous is None:
         return value

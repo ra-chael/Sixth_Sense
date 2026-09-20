@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sixth Sense — Dashboard</title>
+
+  <link
+    rel="icon"
+    type="image/png"
+    href="/website/images/MaranIcon.png"
+  >
+
+  <link rel="stylesheet" href="/website/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Sidebar navigation -->
+  <nav class="sidebar" aria-label="Primary">
+    <div class="brand">
+        <img
+            src="/website/images/MaranIcon.png"
+            alt="Sixth Sense logo"
+            class="brand-logo"
+        >
+
+        <div class="brand-text">
+            <strong>Sixth Sense</strong>
+            <span>Caregiver Support</span>
+        </div>
+    </div>
+
+  <ul class="nav-list">
+
+    <li>
+      <a href="/" class="active">
+        Dashboard
+      </a>
+    </li>
+
+    <li>
+      <a href="/events">
+        Saved events
+      </a>
+    </li>
+
+    <li>
+      <a href="/doctor-summary">
+        Doctor summary
+      </a>
+    </li>
+
+  </ul>
+
+    <p class="sidebar-foot">Physiological state estimates are experimental and are not a medical diagnosis. Simulation mode is available for demonstration.</p>
+  </nav>
+
+  <!-- Mobile tab bar -->
+  <nav class="tab-bar" aria-label="Primary mobile">
+    <ul class="tab-bar-list">
+      <li><a href="/" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Events</a></li>
+      <li><a href="/doctor-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Summary</a></li>
+    </ul>
+  </nav>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div>
+        <h1>Good watch, caregiver</h1>
+        <p class="subtitle">Live physiological state-change monitor</p>
+      </div>
+      <div class="topbar-controls no-print">
+        <button class="icon-btn" data-action="toggle-mute" aria-pressed="false" aria-label="Mute all alerts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
+        </button>
+        <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- Mood tracker: the "hearth" -->
+      <section class="hearth" id="hearth" data-state="stable" aria-live="polite">
+        <div class="hearth-top">
+          <div>
+            <p class="hearth-label">Current physiological state estimate</p>
+            <p class="hearth-state" id="stateLabel">Stable</p>
+          </div>
+          <div class="hearth-meta">
+            <p id="updatedAt">Updated just now</p>
+            <p>EEG-derived · smoothed 5–10s</p>
+          </div>
+        </div>
+
+        <div class="hearth-body">
+          <img
+            id="stateEmoji"
+            class="state-chicken"
+            src="/website/images/StandardChicken.png"
+            alt="Stable physiological state"
+          >
+          <div class="hearth-copy">
+            <p id="stateCopy">Signals are calm and within a comfortable range. No action needed right now.</p>
+            <p class="small">Sound and visuals update automatically the moment this changes.</p>
+          </div>
+        </div>
+
+        <div class="hearth-scale" aria-hidden="true">
+          <div class="scale-pip filled"></div>
+          <div class="scale-pip"></div>
+          <div class="scale-pip"></div>
+        </div>
+      </section>
+
+      <div class="demo-controls">
+          <span class="demo-label">Demo controls</span>
+
+          <div class="demo-buttons">
+              <button type="button" class="demo-state-btn stable"
+                      data-demo-state="stable">
+                  Stable
+              </button>
+
+              <button type="button" class="demo-state-btn elevated"
+                      data-demo-state="elevated">
+                  Elevated
+              </button>
+
+              <button type="button" class="demo-state-btn distress"
+                      data-demo-state="highDistress">
+                  High Distress
+              </button>
+
+              <button type="button" class="demo-state-btn live"
+                      data-demo-state="live">
+                  Live EEG
+              </button>
+          </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Pain visualizer -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Pain visualizer</h2>
+            <span class="hint">Tap regions where discomfort is observed</span>
+          </div>
+          <div class="body-diagram-wrap">
+            <svg id="bodyDiagram" class="body-diagram" viewBox="0 0 100 220">
+              <circle class="zone" data-zone="head" data-intensity="0" cx="50" cy="22" r="16"/>
+              <rect class="zone" data-zone="chest" data-intensity="0" x="30" y="42" width="40" height="38" rx="10"/>
+              <rect class="zone" data-zone="abdomen" data-intensity="0" x="33" y="82" width="34" height="34" rx="9"/>
+              <rect class="zone" data-zone="arm-l" data-intensity="0" x="10" y="44" width="16" height="62" rx="8"/>
+              <rect class="zone" data-zone="arm-r" data-intensity="0" x="74" y="44" width="16" height="62" rx="8"/>
+              <rect class="zone" data-zone="leg-l" data-intensity="0" x="34" y="118" width="15" height="90" rx="8"/>
+              <rect class="zone" data-zone="leg-r" data-intensity="0" x="51" y="118" width="15" height="90" rx="8"/>
+            </svg>
+            <div class="pain-list" id="painList"></div>
+          </div>
+          <div class="pain-legend">
+            <span><i style="background:#f3e0b8"></i>Mild</span>
+            <span><i style="background:#eeb98c"></i>Moderate</span>
+            <span><i style="background:#e08a72"></i>Severe</span>
+          </div>
+          <div class="pain-controls">
+
+            <p class="field-label">
+              Is pain or physical discomfort suspected?
+            </p>
+
+            <div class="pain-present-options">
+              <label>
+                <input
+                  type="radio"
+                  name="painPresent"
+                  value="No"
+                  checked
+                >
+                No
+              </label>
+
+              <label>
+                <input
+                  type="radio"
+                  name="painPresent"
+                  value="Unsure"
+                >
+                Unsure
+              </label>
+
+              <label>
+                <input
+                  type="radio"
+                  name="painPresent"
+                  value="Yes"
+                >
+                Yes
+              </label>
+            </div>
+
+
+            <div id="painDetails" hidden>
+
+              <label class="field-label" for="painLevel">
+                Observed or communicated discomfort level:
+                <strong id="painLevelValue">0</strong>/10
+              </label>
+
+              <input
+                id="painLevel"
+                type="range"
+                min="0"
+                max="10"
+                value="0"
+              >
+
+
+              <p class="field-label">
+                How does the discomfort appear or feel?
+              </p>
+
+              <div class="pain-type-options">
+
+                <label>
+                  <input type="checkbox" name="painType" value="Unknown">
+                  Unknown
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Aching">
+                  Aching
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Sharp">
+                  Sharp
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Burning">
+                  Burning
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Pressure">
+                  Pressure
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Cramping">
+                  Cramping
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Throbbing">
+                  Throbbing
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Tingling">
+                  Tingling
+                </label>
+
+                <label>
+                  <input type="checkbox" name="painType" value="Other">
+                  Other
+                </label>
+
+              </div>
+
+
+              <label class="field-label" for="painNote">
+                Additional pain/discomfort notes
+              </label>
+
+              <textarea
+                id="painNote"
+                placeholder="Example: Patient repeatedly touched their right shoulder and appeared uncomfortable when moving the arm."
+              ></textarea>
+
+            </div>
+
+
+            <label class="field-label" for="caregiverNote">
+              Caregiver note
+            </label>
+
+            <textarea
+              id="caregiverNote"
+              placeholder="Add any other observations..."
+            ></textarea>
+
+
+            <button
+              type="button"
+              id="savePainObservation"
+              class="primary-btn"
+            >
+              Save observation
+            </button>
+
+            <p
+              id="painSaveStatus"
+              class="small"
+              aria-live="polite"
+            ></p>
+
+          </div>
+          
+        </section>
+
+        <!-- Sensor inputs -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Room sensors</h2>
+            <span class="hint">Manual or connected input</span>
+          </div>
+          <div class="sensor-grid">
+            <div class="sensor-field">
+              <label for="sensorTemp">Room temperature</label>
+              <div class="sensor-input-row">
+                <input type="number" id="sensorTemp" step="0.1" placeholder="22.0" readonly>
+                <span class="unit">°C</span>
+              </div>
+            </div>
+            <div class="sensor-field">
+              <label for="sensorHumidity">Humidity</label>
+              <div class="sensor-input-row">
+                <input type="number" id="sensorHumidity" step="1" placeholder="45" readonly>
+                <span class="unit">%</span>
+              </div>
+            </div>
+            <div class="sensor-field">
+              <label for="sensorNoise">Noise level</label>
+              <div class="sensor-input-row">
+                <input type="number" id="sensorNoise" step="0.1" placeholder="40" readonly>
+                <span class="unit">dB</span>
+              </div>
+            </div>
+          </div>
+          <p class="sensor-reading" id="sensorReading">No sensor readings logged yet.</p>
+        </section>
+      </div>
+
+      <!-- Trend chart -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Signal trend</h2>
+          <div class="chart-legend">
+            <span><i style="background:var(--border)"></i>Raw signal</span>
+            <span><i style="background:var(--brand)"></i>Smoothed (5–10s)</span>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart-svg" id="trendChart" viewBox="0 0 600 160" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="chartFade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--brand)" stop-opacity="0.35"/>
+                <stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <line class="grid-line" x1="0" y1="40" x2="600" y2="40"/>
+            <line class="grid-line" x1="0" y1="80" x2="600" y2="80"/>
+            <line class="grid-line" x1="0" y1="120" x2="600" y2="120"/>
+            <polyline id="rawLine" class="raw-line" points=""/>
+            <polygon id="smoothFill" class="smooth-fill" points=""/>
+            <polyline id="smoothLine" class="smooth-line" points=""/>
+          </svg>
+        </div>
+        <div class="chart-foot"><span>−30s</span><span>now</span></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Floating quick controls -->
+  <div class="quick-controls no-print">
+    <button class="icon-btn" data-action="toggle-mute" aria-pressed="false" aria-label="Mute all alerts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
+    </button>
+    <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+    </button>
+  </div>
+
+  <div class="toast" id="toast" role="status">
+    <span class="dot"></span><span class="toast-text">State updated</span>
+  </div>
+</div>
+
+<script src="/website/script.js"></script>
+</body>
+</html>

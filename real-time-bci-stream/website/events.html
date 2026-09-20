@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sixth Sense — Saved events</title>
+<link rel="icon" type="image/png" href="/website/images/MaranIcon.png">
+<link rel="stylesheet" href="/website/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <nav class="sidebar" aria-label="Primary">
+    <div class="brand">
+        <img
+            src="/website/images/MaranIcon.png"
+            alt="Sixth Sense logo"
+            class="brand-logo"
+        >
+
+        <div class="brand-text">
+            <strong>Sixth Sense</strong>
+            <span>Caregiver Support</span>
+        </div>
+    </div>
+
+    <ul class="nav-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Saved events</a></li>
+      <li><a href="/doctor-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Doctor summary</a></li>
+    </ul>
+
+    <p class="sidebar-foot">Events are saved automatically whenever the sensor detects a state shift, keeping the dashboard clean.</p>
+  </nav>
+
+  <nav class="tab-bar" aria-label="Primary mobile">
+    <ul class="tab-bar-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Events</a></li>
+      <li><a href="/doctor-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Summary</a></li>
+    </ul>
+  </nav>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div>
+        <h1>Saved events</h1>
+        <p class="subtitle">Every shift the sensor recorded, with room for your notes</p>
+      </div>
+      <div class="topbar-controls no-print">
+        <button class="icon-btn" data-action="toggle-mute" aria-pressed="false" aria-label="Mute all alerts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
+        </button>
+        <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="filter-row" id="eventFilters">
+        <button class="chip-toggle active" data-filter="all">All</button>
+        <button class="chip-toggle" data-filter="stable">Stable</button>
+        <button class="chip-toggle" data-filter="elevated">Elevated</button>
+        <button class="chip-toggle" data-filter="highDistress">High Distress Signal</button>
+      </div>
+
+      <div id="eventsList" style="display:flex; flex-direction:column; gap:14px;"></div>
+    </main>
+  </div>
+
+  <div class="quick-controls no-print">
+    <button class="icon-btn" data-action="toggle-mute" aria-pressed="false" aria-label="Mute all alerts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
+    </button>
+    <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script src="/website/script.js"></script>
+</body>
+</html>

@@ -26,7 +26,7 @@ STATE_STYLE = {
         "label": "Stable",
         "description": "Signals are steady. No sign of distress.",
     },
-    "Moderate": {
+    "Elevated": {
         "core": "#A57FC0",
         "coreDark": "#BF9BD6",
         "gradA": "#E7D9EF",
@@ -37,7 +37,7 @@ STATE_STYLE = {
         "label": "Moderate",
         "description": "Arousal is rising. Worth a look.",
     },
-    "Extreme": {
+    "High Distress Signal": {
         "core": "#CC8377",
         "coreDark": "#DE9788",
         "gradA": "#EFD1CB",
@@ -52,7 +52,7 @@ STATE_STYLE = {
 
 HEIGHT = 340
 
-
+# this method takes in state, valence, arousal, quality, muted, night, and elapsed time as parameters. It creates a payload dictionary with these values and the corresponding styles for the current state. The payload is then converted to a JSON string and passed to an HTML template that renders the hero card with the appropriate visual elements and animations based on the provided data.
 def render(state, valence, arousal, quality, muted, night, elapsed):
     payload = json.dumps(
         {
@@ -68,6 +68,11 @@ def render(state, valence, arousal, quality, muted, night, elapsed):
     )
     components.html(_HTML.replace("__PAYLOAD__", payload), height=HEIGHT)
 
+# -------------------------------------------------------
+#TO-DO: change html code etc tmr
+
+# This part is the HTML/JS for the hero card. It is a self-contained island that receives a JSON payload from Python and renders the card with the appropriate visual elements and animations based on the provided data.
+# -------------------------------------------------------
 
 _HTML = r"""
 <!DOCTYPE html>

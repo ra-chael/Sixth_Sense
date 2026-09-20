@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sixth Sense — Doctor summary</title>
+<link rel="icon" type="image/png" href="/website/images/MaranIcon.png">
+<link rel="stylesheet" href="/website/style.css">
+</head>
+<body>
+<div class="app-shell" id="summaryRoot">
+
+  <nav class="sidebar" aria-label="Primary">
+    <div class="brand">
+        <img
+            src="/website/images/MaranIcon.png"
+            alt="Sixth Sense logo"
+            class="brand-logo"
+        >
+
+        <div class="brand-text">
+            <strong>Sixth Sense</strong>
+            <span>Caregiver Support</span>
+        </div>
+    </div>
+
+    <ul class="nav-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Saved events</a></li>
+      <li><a href="/doctor-summary" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Doctor summary</a></li>
+    </ul>
+
+    <p class="sidebar-foot">A single page to hand to a clinician: state history, pain notes, and room conditions in one view.</p>
+  </nav>
+
+  <nav class="tab-bar" aria-label="Primary mobile">
+    <ul class="tab-bar-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Events</a></li>
+      <li><a href="/doctor-summary" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Summary</a></li>
+    </ul>
+  </nav>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div>
+        <h1>Doctor summary</h1>
+        <p class="subtitle">A clean report to share at the next appointment</p>
+      </div>
+      <div class="topbar-controls no-print">
+        <button class="btn btn-primary" id="printSummary">Print / save as PDF</button>
+        <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <section class="summary-header">
+        <div class="field">
+          <label>Patient name</label>
+          <input type="text" placeholder="Add patient name">
+        </div>
+        <div class="field">
+          <label>Prepared by</label>
+          <input type="text" placeholder="Caregiver name">
+        </div>
+        <div class="field">
+          <label>Report date</label>
+          <input type="text" id="reportDate" readonly>
+        </div>
+      </section>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <p class="stat-label">Current state</p>
+          <p class="stat-value" id="sumCurrentState">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Total recorded shifts</p>
+          <p class="stat-value" id="sumTotalShifts">0</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Distress episodes</p>
+          <p class="stat-value" id="sumExtremeCount">0</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Latest room reading</p>
+          <p class="stat-value" id="sumSensor">—</p>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Time in each state</h2></div>
+        <div class="dist-bar">
+          <div class="seg stable" style="width:34%"></div>
+          <div class="seg elevated" style="width:33%"></div>
+          <div class="seg highDistress" style="width:33%"></div>
+        </div>
+        <div class="chart-legend" style="margin-top:10px;">
+          <span><i style="background:var(--stable-a)"></i>Stable <b id="distLabel-stable">0%</b></span>
+          <span><i style="background:var(--elevated-a)"></i>Elevated <b id="distLabel-elevated">0%</b></span>
+          <span><i style="background:var(--high-distress-a)"></i>High Distress Signal <b id="distLabel-highDistress">0%</b></span>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Pain map notes</h2></div>
+          <table class="summary-table">
+            <thead><tr><th>Region</th><th>Severity</th></tr></thead>
+            <tbody id="painSummaryBody"></tbody>
+          </table>
+          <p class="hint" style="margin-top:12px;">Caregiver note</p>
+          <p id="painSummaryNote" style="font-size:0.88rem; line-height:1.5;"></p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Room conditions log</h2></div>
+          <table class="summary-table">
+            <thead><tr><th>Logged</th><th>Temp</th><th>Humidity</th><th>Noise</th></tr></thead>
+            <tbody id="sensorSummaryBody"></tbody>
+          </table>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Shift history &amp; caregiver notes</h2></div>
+        <table class="summary-table">
+          <thead><tr><th>Time</th><th>Transition</th><th>Note</th></tr></thead>
+          <tbody id="eventSummaryBody"></tbody>
+        </table>
+      </section><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sixth Sense — Doctor summary</title>
+<link rel="icon" type="image/png" href="/website/images/MaranIcon.png">
+<link rel="stylesheet" href="/website/style.css">
+</head>
+<body>
+<div class="app-shell" id="summaryRoot">
+
+  <nav class="sidebar" aria-label="Primary">
+    <div class="brand">
+        <img
+            src="/website/images/MaranIcon.png"
+            alt="Sixth Sense logo"
+            class="brand-logo"
+        >
+
+        <div class="brand-text">
+            <strong>Sixth Sense</strong>
+            <span>Caregiver Support</span>
+        </div>
+    </div>
+
+    <ul class="nav-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Saved events</a></li>
+      <li><a href="/doctor-summary" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Doctor summary</a></li>
+    </ul>
+
+    <p class="sidebar-foot">A single page to hand to a clinician: state history, pain notes, and room conditions in one view.</p>
+  </nav>
+
+  <nav class="tab-bar" aria-label="Primary mobile">
+    <ul class="tab-bar-list">
+      <li><a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>Dashboard</a></li>
+      <li><a href="/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Events</a></li>
+      <li><a href="/doctor-summary" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 3h8l2 3v15H6V6l2-3Z"/><path d="M9 12h6M9 16h4"/></svg>Summary</a></li>
+    </ul>
+  </nav>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div>
+        <h1>Doctor summary</h1>
+        <p class="subtitle">A clean report to share at the next appointment</p>
+      </div>
+      <div class="topbar-controls no-print">
+        <button class="btn btn-primary" id="printSummary">Print / save as PDF</button>
+        <button class="icon-btn" data-action="toggle-theme" aria-pressed="false" aria-label="Toggle night mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <section class="summary-header">
+        <div class="field">
+          <label>Patient name</label>
+          <input type="text" placeholder="Add patient name">
+        </div>
+        <div class="field">
+          <label>Prepared by</label>
+          <input type="text" placeholder="Caregiver name">
+        </div>
+        <div class="field">
+          <label>Report date</label>
+          <input type="text" id="reportDate" readonly>
+        </div>
+      </section>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <p class="stat-label">Current state</p>
+          <p class="stat-value" id="sumCurrentState">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Total recorded shifts</p>
+          <p class="stat-value" id="sumTotalShifts">0</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Distress episodes</p>
+          <p class="stat-value" id="sumExtremeCount">0</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Latest room reading</p>
+          <p class="stat-value" id="sumSensor">—</p>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Time in each state</h2></div>
+        <div class="dist-bar">
+          <div class="seg stable" style="width:0%"></div>
+          <div class="seg elevated" style="width:0%"></div>
+          <div class="seg highDistress" style="width:0%"></div>
+        </div>
+        <div class="chart-legend" style="margin-top:10px;">
+          <span><i style="background:var(--stable-a)"></i>Stable <b id="distLabel-stable">0%</b></span>
+          <span><i style="background:var(--elevated-a)"></i>Elevated <b id="distLabel-elevated">0%</b></span>
+          <span><i style="background:var(--high-distress-a)"></i>High Distress Signal <b id="distLabel-highDistress">0%</b></span>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Pain map notes</h2></div>
+          <table class="summary-table">
+            <thead><tr><th>Region</th><th>Severity</th></tr></thead>
+            <tbody id="painSummaryBody"></tbody>
+          </table>
+          <p class="hint" style="margin-top:12px;">Caregiver note</p>
+          <p id="painSummaryNote" style="font-size:0.88rem; line-height:1.5;"></p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Room conditions log</h2></div>
+          <table class="summary-table">
+            <thead><tr><th>Logged</th><th>Temp</th><th>Humidity</th><th>Noise</th></tr></thead>
+            <tbody id="sensorSummaryBody"></tbody>
+          </table>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Shift history &amp; caregiver notes</h2></div>
+        <table class="summary-table">
+          <thead><tr><th>Time</th><th>Transition</th><th>Note</th></tr></thead>
+          <tbody id="eventSummaryBody"></tbody>
+        </table>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script src="/website/script.js"></script>
+<script>
+  document.getElementById('reportDate').value = new Date().toLocaleDateString();
+</script>
+</body>
+</html>
+
+
+    </main>
+  </div>
+</div>
+
+<script src="/website/script.js"></script>
+<script>
+  document.getElementById('reportDate').value = new Date().toLocaleDateString();
+</script>
+</body>
+</html>

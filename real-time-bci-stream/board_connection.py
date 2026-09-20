@@ -1,5 +1,7 @@
 """Lazy BrainFlow/Cyton connection helper. Nothing here runs at import time."""
 
+import numpy as np
+
 DEFAULT_SERIAL_PORT = "/dev/cu.usbserial-DM01IK21"
 
 
@@ -37,6 +39,19 @@ def connect_cyton(serial_port=DEFAULT_SERIAL_PORT, existing_board=None):
     try:
         board.prepare_session()
         board.start_stream()
+
+        # Adopt whatever rate the board reports rather than assuming one. The
+        # band edges are in Hz, so a mismatch would silently measure the wrong
+        # frequencies.
+        try:
+            import emotion
+
+            emotion.set_sample_rate(
+                BoardShim.get_sampling_rate(BoardIds.CYTON_BOARD.value)
+            )
+        except Exception:
+            pass
+
         return board, None
     except Exception as exc:
         try:
@@ -58,6 +73,34 @@ def disconnect_cyton(board):
         board.release_session()
     except Exception:
         pass
+
+
+def capture_motion(board, n_samples=250):
+    """Head movement from the Cyton's onboard accelerometer, in g.
+
+    Kept separate from capture_window so the EEG path is unchanged: this is
+    display-only context and must never be able to break a capture.
+
+    Returns the magnitude of movement about gravity — 0 when still, rising
+    with motion — or None when the board has no accelerometer data.
+    """
+    try:
+        from brainflow.board_shim import BoardShim, BoardIds
+
+        data = board.get_current_board_data(n_samples)
+        rows = BoardShim.get_accel_channels(BoardIds.CYTON_BOARD.value)
+        accel = data[rows, :]
+
+        if accel.size == 0:
+            return None
+
+        # Magnitude of the acceleration vector, minus the 1g the sensor reads
+        # at rest. What remains is movement rather than orientation.
+        magnitude = np.sqrt((accel**2).sum(axis=0))
+        return float(np.mean(np.abs(magnitude - np.median(magnitude))))
+    except Exception:
+        # Motion is a nice-to-have; a failure here must not affect the session.
+        return None
 
 
 def capture_window(board, n_samples=250):

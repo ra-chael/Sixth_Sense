@@ -1,7 +1,9 @@
 import numpy as np
 from scipy.signal import welch
 
-SAMPLE_RATE = 250
+# Single source of truth: emotion.SAMPLE_RATE is set from the board on
+# connect, and a second hardcoded copy here would silently disagree with it.
+import emotion as _emotion
 
 BANDS = {
     "theta": (4, 8),
@@ -12,13 +14,46 @@ BANDS = {
 
 def _band_power(window, band):
     low, high = band
-    freqs, psd = welch(window, fs=SAMPLE_RATE, nperseg=min(window.shape[-1], 128), axis=-1)
+    freqs, psd = welch(window, fs=_emotion.SAMPLE_RATE, nperseg=min(window.shape[-1], 128), axis=-1)
     mask = (freqs >= low) & (freqs <= high)
     return psd[..., mask].mean(axis=-1).mean()
 
 
+ARTIFACT_UV = 120.0
+ARTIFACT_FRACTION = 0.02
+
+
+def detect_artifact(window):
+    """Flag windows dominated by a blink or muscle transient.
+
+    A blink or jaw clench is a large, brief excursion that lands in the same
+    fast bands as genuine arousal, so a window carrying one cannot be scored
+    as if it were clean EEG. This looks for samples past a plausible cortical
+    amplitude rather than judging the window as a whole, so a short spike is
+    caught even when the average still looks reasonable.
+
+    Returns (is_artifact, fraction_of_samples_affected).
+    """
+    window = np.asarray(window, dtype=float)
+    if window.size == 0:
+        return False, 0.0
+
+    over = np.abs(window) > ARTIFACT_UV
+
+    # Judge per channel, not across the whole array: a blink is brief and
+    # lands mostly on the frontal pair, so averaging it over eight channels
+    # dilutes it below any sensible threshold. The worst channel decides.
+    per_channel = over.mean(axis=-1)
+    fraction = float(per_channel.max())
+    return fraction > ARTIFACT_FRACTION, fraction
+
+
 def check_signal_quality(window):
     """Very rough signal-quality heuristic based on amplitude range and flatline check."""
+    window = np.asarray(window, dtype=float)
+    if window.size == 0:
+        return "Poor"
+
     peak = np.max(np.abs(window))
     variance = np.var(window)
 

@@ -7,11 +7,13 @@ are expressed relative to a per-participant baseline, because the absolute
 values differ enormously between people and between electrode placements.
 
 Scope, stated plainly: of the eight recorded channels only the frontal pair
-feeds the estimate, because Fp1/Fp2 are the sites that stay usable on a dry
-electrode cap in a noisy room — posterior channels on this hardware are
-mostly artifact. Two trusted channels beat eight noisy ones, but the other
-six are recorded and displayed so the narrowness is visible rather than
-hidden.
+feeds the estimate. Not because the others are unusable — all eight record
+cleanly — but because both measurements are defined on that pair. Valence is
+frontal alpha asymmetry, an Fp1-vs-Fp2 quantity by construction, and frontal
+beta is the standard arousal index. Bringing in the other six would require a
+weighting we have no labelled data to justify, which adds parameters rather
+than information. All eight are recorded and displayed so the narrowness is
+visible rather than hidden.
 
 This is a demonstration estimate of affective state, not a clinical measure.
 """

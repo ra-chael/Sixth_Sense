@@ -193,11 +193,23 @@ confidence signal is worse than none.
 ## Likely questions
 
 **"Why only 2 of 8 channels?"**
-> Deliberate. Fp1/Fp2 are what stay reliable on a dry-electrode cap in a noisy
-> room; posterior channels here are mostly artifact. Two trusted channels beat
-> eight noisy ones. The other six are recorded and displayed, so the narrowness
-> is visible rather than hidden. Multi-channel fusion is the obvious next step
-> — we didn't ship it because we couldn't validate it in time.
+> All eight record fine — signal quality isn't the reason. It's that the two
+> measurements we trust are both *defined* on the frontal pair: valence is
+> frontal alpha asymmetry, which is specifically an Fp1-vs-Fp2 quantity, and
+> frontal beta is the standard arousal index. Adding the other six would mean
+> inventing a weighting we have no data to justify, so we'd be adding
+> parameters rather than information. We record and display all eight so the
+> narrowness is visible, and multi-channel fusion is the obvious next step —
+> we didn't ship it because we couldn't validate it in time.
+
+**"But you have 8 good channels — surely more data is better?"**
+> Only if you know how to combine them. With no labelled affective data, any
+> weighting across eight channels would be guessed, and a guessed weighting
+> across eight inputs is easier to get wrong than a literature-backed formula
+> on two. The posterior channels would be genuinely useful as *corroboration*
+> — if occipital alpha tracks the frontal reading, that's evidence the signal
+> is neural rather than artifact — but that's a validation step, not a bigger
+> model.
 
 **"How accurate is it?"**
 > We don't have an accuracy number, and I'd be making one up if I gave you one.

@@ -328,9 +328,15 @@ about — and each one has a next step we know how to take.
 Only Fp1 and Fp2 feed the estimate. The other six are recorded and displayed
 but unused.
 
-This is a deliberate trade, not an oversight: the frontal pair is what stays
-reliable on a dry-electrode cap in a noisy room, and two trusted channels beat
-eight noisy ones. We would rather defend a narrow model than ship a wide one
+This is a deliberate trade, not an oversight, and not a signal-quality
+problem — all eight channels record cleanly on our cap. It is that both
+measurements are *defined* on the frontal pair: valence is frontal alpha
+asymmetry, an Fp1-vs-Fp2 quantity by construction, and frontal beta is the
+standard arousal index.
+
+Bringing in the other six would mean choosing a weighting across them, and we
+have no labelled affective data to justify one. That adds parameters rather
+than information. We would rather defend a narrow model than ship a wider one
 we cannot explain.
 
 **Next:** use the posterior channels as corroboration — if central and

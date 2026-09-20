@@ -193,11 +193,19 @@ class EmotionTracker:
         # make the z-scores explode and peg the display at its limits on
         # ordinary resting variation. Floor the std so normal drift stays in
         # the middle of the scale.
+        # Median/MAD keeps one remaining bad-but-not-rejected window from
+        # moving the reference point or inflating the spread for the whole
+        # session. 1.4826 makes MAD comparable to standard deviation for a
+        # normal distribution; the floors still protect very short baselines.
+        valence_center = float(np.median(valences))
+        arousal_center = float(np.median(arousals))
+        valence_mad = float(np.median(np.abs(np.asarray(valences) - valence_center)))
+        arousal_mad = float(np.median(np.abs(np.asarray(arousals) - arousal_center)))
         self.baseline = {
-            "valence_mean": float(np.mean(valences)),
-            "valence_std": max(float(np.std(valences)), MIN_VALENCE_STD),
-            "arousal_mean": float(np.mean(arousals)),
-            "arousal_std": max(float(np.std(arousals)), MIN_AROUSAL_STD),
+            "valence_mean": valence_center,
+            "valence_std": max(1.4826 * valence_mad, MIN_VALENCE_STD),
+            "arousal_mean": arousal_center,
+            "arousal_std": max(1.4826 * arousal_mad, MIN_AROUSAL_STD),
         }
         return self.baseline
 

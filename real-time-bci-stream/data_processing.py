@@ -48,6 +48,16 @@ def detect_artifact(window):
     return fraction > ARTIFACT_FRACTION, fraction
 
 
+def should_hold_window(window):
+    """Return whether a window must be excluded before state estimation."""
+    artifact, _ = detect_artifact(window)
+    if artifact:
+        return True, "Movement or blink detected"
+    if check_signal_quality(window) == "Poor":
+        return True, "Signal quality poor"
+    return False, None
+
+
 def check_signal_quality(window):
     """Very rough signal-quality heuristic based on amplitude range and flatline check."""
     window = np.asarray(window, dtype=float)

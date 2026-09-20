@@ -11,6 +11,32 @@ BETA_FREQ = 22.0
 GAMMA_FREQ = 38.0
 
 
+# The three states the visualizer reports, as the affective coordinates that
+# produce them. These are targets for the synthesiser, not display values: a
+# window generated here goes through the same Welch/band-power/threshold chain
+# as a real one, and the estimator has to measure its way back to the state.
+# Drift is how far each reading wanders, so a preset looks like a live signal
+# rather than a constant.
+PRESETS = {
+    "Calm": {"arousal": -0.55, "valence": 0.45, "drift": 0.10},
+    "Sad": {"arousal": 0.05, "valence": -0.55, "drift": 0.12},
+    "Stressed": {"arousal": 0.75, "valence": -0.70, "drift": 0.10},
+}
+
+
+def generate_preset_window(name, n_channels=8, n_samples=250, rng=None):
+    """A window for one of the named states, with natural variation."""
+    preset = PRESETS[name]
+    rng = rng or np.random
+    drift = preset["drift"]
+    return generate_eeg_window(
+        n_channels=n_channels,
+        n_samples=n_samples,
+        arousal=preset["arousal"] + rng.normal(0, drift),
+        valence=preset["valence"] + rng.normal(0, drift),
+    )
+
+
 def generate_eeg_window(
     n_channels=8,
     n_samples=250,

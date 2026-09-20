@@ -136,16 +136,23 @@ between sessions, and between electrode placements — gel thickness alone moves
 it. An arousal of 1.4 means nothing on its own. It only means something
 against *this person's* resting 1.1.
 
-So: 20 seconds of rest records their mean and spread, and every later reading
-is expressed as *"how many standard deviations from their own rest."*
+So: 20 seconds of rest records their centre and spread, and every later
+reading is expressed as *"how far from their own rest, in units of their own
+variability."*
 
 **Without it** the app still runs, but the thresholds are arbitrary numbers and
 the state barely moves.
 
-**One subtlety worth mentioning:** we floor the baseline spread
-(`MIN_VALENCE_STD`, `MIN_AROUSAL_STD`). A very consistent 20-second baseline
-produced an implausibly small standard deviation, which made ordinary drift
-look like a huge deviation and pegged the display at its limits.
+**Two subtleties worth mentioning:**
+
+We use the **median and MAD** (median absolute deviation, scaled by 1.4826 to
+match a standard deviation) rather than mean and standard deviation. One bad
+window during calibration — a blink, a shift in the chair — would drag a mean;
+it barely moves a median.
+
+We also **floor the spread** (`MIN_VALENCE_STD`, `MIN_AROUSAL_STD`). A very
+consistent baseline produced an implausibly small spread, which made ordinary
+drift look like a huge deviation and pegged the display at its limits.
 
 ---
 
@@ -231,28 +238,24 @@ confidence signal is worse than none.
 > scored, and the accelerometer shows whether the head was still — so a
 > caregiver can see that an arousal rise coincided with movement.
 
-**"What does the LLM do? Does it detect the emotion?"**
-> No — and that separation is deliberate. The detection is entirely signal
-> processing: band powers, alpha asymmetry, thresholds. The model never sees
-> EEG and never decides a state. It takes numbers we already computed —
-> valence, arousal, signal quality, whether the head moved — and phrases them
-> as one sentence for the caregiver log. If you removed it, every reading and
-> every state would be identical; you would just lose the plain-English line.
+**"How is the plain-English summary generated? Is it an AI model?"**
+> It's a deterministic template over the measurements — no model, no network.
+> We built it on a local language model first and replaced it, because the
+> sentence has to be guaranteed rather than likely: never read the figures
+> back, never claim to know what the person feels, always carry the movement
+> caveat when the head moved. A prompt requests those; a template enforces
+> them, and our tests assert them.
 
-**"Why not let the model interpret the EEG directly?"**
-> Because it cannot, and it would not tell you that. An LLM given band powers
-> will produce a confident-sounding interpretation with nothing behind it.
-> That would replace a pipeline we can explain with a guess we cannot. The
-> split we chose — signal processing decides, language model describes — keeps
-> every clinical-sounding claim traceable to a measurement.
+**"Why not let a model interpret the EEG directly?"**
+> Because it cannot, and it would not tell you that. Give a language model
+> band powers and it produces a confident-sounding interpretation with nothing
+> behind it — replacing a pipeline we can explain with a guess we cannot.
+> Detection stays in signal processing so every clinical-sounding phrase
+> traces back to a measurement.
 
-**"Is patient data going to a server?"**
-> No. The model runs locally through Ollama on this machine. Nothing leaves
-> it. For anything touching patient state that is the only defensible option.
-
-**"What if the model is not running?"**
-> Summaries are skipped and everything else works unchanged. It is additive,
-> never a dependency.
+**"Is patient data going anywhere?"**
+> No. There is no network call in the entire application. Everything runs on
+> this machine.
 
 **"Why Streamlit and not a notebook?"**
 > It's a real-time tool for a caregiver, not an analysis. A notebook can't be a

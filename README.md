@@ -1,10 +1,85 @@
-# Sixth_Sense
+<p align="center">
+  <img src="./images-emotion/MaranIcon.png" alt="Sixth Sense icon" width="140">
+</p>
+
+<h1 align="center">Sixth Sense</h1>
+
 A caregiver assistance tool to sense and address emotional shifts
 
 Estimates a caregiver-facing comfort/discomfort state from live EEG. Runs on
 an OpenBCI Cyton, or on synthetic signal when no hardware is attached.
 
 Demonstration prototype — not a medical pain detector.
+
+---
+
+# Overview
+
+## The problem
+
+A patient who cannot speak — late-stage dementia, severe autism, an intubated
+ICU patient, a newborn — still experiences discomfort, but has no reliable way
+to report it. Caregivers read faces and body language, which is slow,
+subjective, and fails exactly when the patient is least able to express
+themselves. **Sixth Sense gives that person a channel that does not require
+speech or movement: their own cortical activity.**
+
+## What it does
+
+Reads EEG from a dry-electrode headset, estimates two affective dimensions
+once per second, and shows a single glanceable state a caregiver can register
+in under a second — **Stable**, **Moderate**, or **Extreme**. Every shift is
+timestamped in a log the caregiver can annotate.
+
+## The science
+
+Affective state is conventionally described on two axes, and each maps to a
+measurable EEG feature:
+
+| Axis | What it means | How we measure it |
+|---|---|---|
+| **Valence** | Pleasant ↔ unpleasant | **Frontal alpha asymmetry.** Alpha power (8–13 Hz) is *inversely* related to cortical activity, so more right-frontal alpha means relatively more left-frontal engagement. The approach–withdrawal model associates left-frontal dominance with approach and positive affect, right-frontal with withdrawal and negative affect. |
+| **Arousal** | Calm ↔ activated | **Fast-over-slow band ratio**, (beta + ½·gamma) / (alpha + theta). An alert cortex desynchronises: fast-band power rises and slow-band power falls. Gamma (30–45 Hz) is weighted at half because it carries pain-related signal but also muscle artefact. |
+
+A state is **not** arousal alone — high arousal is ambiguous, since excitement
+and distress look alike in beta. Negative valence is what escalates it:
+
+```python
+distress = arousal + max(0, −valence) × 0.5
+```
+
+So an animated, *positive* patient reads Stable; one equally activated but
+*negative* reads Moderate or Extreme.
+
+## Why it is built this way
+
+Three decisions a reviewer should interrogate, and the reasoning:
+
+**Everything is relative to the individual.** Absolute band power varies by an
+order of magnitude between people, sessions, and electrode placements — gel
+thickness alone moves it. A 20-second resting baseline is recorded per
+participant, and every later reading is expressed as deviation from *their*
+rest, using a **median and MAD** rather than mean and standard deviation so a
+single bad calibration window cannot skew the reference.
+
+**Artefacts are held, not scored.** A blink or jaw clench is a large transient
+landing in the same fast bands as genuine arousal. Windows carrying one are
+excluded and the previous reading repeats, with the reason shown. On recorded
+EEG roughly a third of windows are affected — without this, a facial twitch
+reads as distress a third of the time.
+
+**Two electrodes of eight, deliberately.** All eight channels record cleanly.
+But both measurements are *defined* on the frontal pair — alpha asymmetry is
+an Fp1-vs-Fp2 quantity by construction. Using the other six would require a
+weighting no labelled data justifies, adding parameters rather than
+information.
+
+## What it is not
+
+It reports a state estimate derived from band power. It cannot diagnose, it is
+not validated against patient self-report, and it is not a medical device. The
+[Limitations](#limitations-and-future-work) section states each gap with its
+next step.
 
 ---
 
@@ -44,16 +119,9 @@ the numbers mean, keep reading.
 > Activation fails on Windows with *"cannot be loaded"*? Run
 > `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry.
 
-**Optional — plain-language event summaries.** Each state change can be
-described in one sentence for the caregiver log, written by a local model.
-Install [Ollama](https://ollama.com), then:
-
-```bash
-ollama pull qwen3:8b
-```
-
-Runs entirely on your machine; no data leaves it. Skip this and the app works
-exactly the same, minus the summaries.
+Every state change is also summarised in one plain sentence for the caregiver
+log — written from the measurements by a deterministic template, so it needs
+no network, no API key, and behaves identically every run.
 
 ---
 
@@ -177,9 +245,16 @@ them. An arousal of `1.4` means nothing on its own; it only means something
 against *this participant's* resting `1.1`.
 
 So the 20-second baseline records resting mean and spread, and every later
-reading is expressed as "how many standard deviations from this person's
-own rest". Without it the app still runs, but the numbers are unreferenced
-and the state thresholds are arbitrary.
+reading is expressed as "how far from this person's own rest, in units of
+their own variability". The centre and spread are the **median and MAD**
+rather than mean and standard deviation, so one bad calibration window cannot
+drag the reference. Without a baseline the app still runs, but the numbers are
+unreferenced and the state thresholds are arbitrary.
+
+Calibration excludes windows with poor signal, flat channels, blinks, or
+muscle artifacts. The live estimator applies the same quality gate before
+scoring, so an unreliable window is held as stale instead of changing the
+participant's state.
 
 ### Why the smoothing
 
@@ -249,26 +324,26 @@ movement lets a caregiver see that difference. The reason it is not in the
 estimate: the threshold is uncalibrated, and a movement signal feeding the
 state could turn a restless patient into a false alarm.
 
-### Why a language model describes but never decides
+### Why the summary is a template, not a language model
 
 Each state change gets a one-line plain-language summary in the event log,
-written by a local model through Ollama.
+assembled from the measurements by a deterministic function.
 
-The boundary is strict and deliberate: **the model never sees EEG and never
-decides a state.** It receives numbers this pipeline already computed —
-valence, arousal, signal quality, whether the head moved — and phrases them
-for a caregiver. Remove it and every reading and every state is identical;
-only the English sentence is lost.
+We built this on a local language model first, then replaced it. The reason is
+that the sentence has to be *guaranteed*, not merely likely: it must never
+read the figures back, never claim to know what the person feels, and must
+always carry the movement caveat when the head moved. Those are properties a
+prompt requests and a template enforces — and `test_narration_quality.py`
+asserts each one, which is only possible because the output is deterministic.
+
+The boundary a language model was there to respect is now structural: **the
+summary never sees EEG and never decides a state.** It receives numbers this
+pipeline already computed and phrases them. Remove it and every reading and
+every state is identical; only the English sentence is lost.
 
 The alternative — handing band powers to a model and asking what the patient
 feels — would produce confident text with nothing behind it, replacing a
-signal chain we can explain with a guess we cannot. Keeping detection in
-signal processing and language in the language model means every
-clinical-sounding phrase traces back to a measurement.
-
-It runs locally, so no participant data leaves the machine, and it is
-additive: if Ollama is not running the summaries are skipped and nothing else
-changes.
+signal chain we can explain with a guess we cannot.
 
 ### Where to change things
 
@@ -282,7 +357,7 @@ changes.
 | Frequency bands | `emotion.py` | `BANDS`, `GAMMA_WEIGHT` |
 | Artifact sensitivity | `data_processing.py` | `ARTIFACT_UV`, `ARTIFACT_FRACTION` |
 | Movement threshold | `app.py` | `MOTION_THRESHOLD` |
-| Summary model / wording | `narrate.py` | `DEFAULT_MODEL`, `SYSTEM_PROMPT` |
+| Summary wording | `narrate.py` | `summarize()` |
 
 ### Testing without hardware
 
@@ -498,20 +573,88 @@ rather than keeping their own copy.
 
 ## Files
 
-All under [`real-time-bci-stream/`](./real-time-bci-stream/). Read them in this
-order — each one only depends on the ones above it:
+All under [`real-time-bci-stream/`](./real-time-bci-stream/). Listed in
+dependency order — each depends only on the ones above it, so reading top to
+bottom follows the signal.
 
-| File | Role |
-|---|---|
-| `simulated_data.py` | Synthetic 8-channel EEG. Start here — it defines the window shape (`8 × 250`) everything else expects. |
-| `board_connection.py` | Opens/closes the Cyton over BrainFlow and returns the same window shape as the simulator, so the rest of the app cannot tell them apart. Also reads the accelerometer, kept in a separate function so it cannot affect an EEG capture. |
-| `data_processing.py` | Band powers, signal quality, and the blink/muscle artifact guard. |
-| `emotion.py` | The actual detection — valence, arousal, baseline, smoothing, state. Most of the science lives here. |
-| `hero.py` | The animated card, as a self-contained HTML/JS island. No detection logic. |
-| `narrate.py` | Turns a logged state change into one caregiver-facing sentence via a local model. No detection logic. |
-| `theme.py` | Page styling — fonts, colours, and the Streamlit chrome overrides. |
-| `trend.py` | The Altair charts: the signal trend and the raw per-electrode traces. |
-| `app.py` | Streamlit UI and the once-per-second loop that wires the above together. |
+### The signal path
+
+**`simulated_data.py`** — synthetic 8-channel EEG.
+*Why it exists:* the whole pipeline can be exercised and tested without
+hardware, which is how the state logic was verified.
+*How:* sums alpha, beta, gamma and theta sinusoids per channel, with the
+fast/slow balance and the Fp1-vs-Fp2 alpha ratio set from target arousal and
+valence — the inverse of what the estimator measures. Defines the `8 × 250`
+window shape everything downstream expects. Can inject a blink or jaw clench
+to exercise the artefact guard.
+
+**`board_connection.py`** — the OpenBCI Cyton, over BrainFlow.
+*Why:* returns the *same* window shape as the simulator, so nothing
+downstream can tell real from synthetic.
+*How:* slices the EEG rows out of the board's 24-row packet (the rest is
+accelerometer, aux and timestamps), adopts the board's own sample rate on
+connect, and clears orphaned sessions. Head movement is read by a **separate**
+function so a failure there can never break an EEG capture.
+
+**`data_processing.py`** — quality gate.
+*Why:* a blink or clench lands in the same fast bands as genuine arousal, so
+scoring those windows makes a facial twitch read as distress.
+*How:* flags windows with samples past 120 µV, judged **per channel** — a
+blink is brief and frontal, so averaging across eight channels dilutes it
+below any usable threshold. The worst channel decides.
+
+**`emotion.py`** — the estimate. Most of the science is here.
+*Why:* turns band powers into an affective state that means something for
+*this* participant.
+*How:* Welch PSD → theta/alpha/beta/gamma → frontal alpha asymmetry
+(valence) and fast-over-slow ratio (arousal) → referenced to the participant's
+resting **median and MAD** → tanh-squashed → exponentially smoothed →
+thresholded with hysteresis. Holds the previous reading rather than emitting
+NaN when a window is unusable.
+
+### The interface
+
+**`hero.py`** — the state card, as a self-contained HTML/JS island.
+*Why:* Streamlit cannot crossfade a gradient, breathe an orb, or play a tone.
+*How:* two stacked gradient layers crossfade on a state change; the face is
+drawn from the live numbers — eyes track arousal, brows and mouth track
+valence — so the expression can be read back as the values that produced it.
+A two-tone chime marks any shift, a four-note ascending phrase marks recovery
+to Stable. **No detection logic.**
+
+**`trend.py`** — the Altair charts.
+*Why:* `st.line_chart` sorts its legend alphabetically, which silently
+mislabelled every electrode trace (C3 shown first when row 0 is Fp1).
+*How:* montage order made explicit, frontal pair highlighted, and the
+Moderate threshold line imported from `emotion.py` rather than hardcoded so
+the chart cannot drift out of agreement with the state logic.
+
+**`narrate.py`** — one plain-language sentence per logged state change.
+*Why:* a caregiver reads English faster than a number, and the log needs a
+record that survives without interpretation.
+*How:* a deterministic template over the measurements. It never prints
+figures, never names the state, never claims to know what the person feels,
+and always surfaces the movement or poor-signal caveat when present — the
+properties `test_narration_quality.py` asserts.
+
+**`theme.py`** — page styling: fonts, colours, Streamlit chrome overrides.
+
+**`app.py`** — the Streamlit UI and the once-per-second loop that wires all of
+the above together.
+
+### Tests
+
+**`test_pipeline_quality.py`** — blink and flat windows are held before state
+estimation, clean windows are scored, a held window does not change the
+current state, and the baseline's robust centre survives an outlier.
+
+**`test_narration_quality.py`** — the summary reads no figures back, makes no
+claim about the person, and carries the movement caveat whenever the head
+moved.
+
+Run them with `python -m pytest` from `real-time-bci-stream/`.
+
+---
 
 If you are changing **what is detected**, you want `emotion.py`. If you are
 changing **how it looks**, you want `hero.py`. They do not overlap.

@@ -13,7 +13,7 @@ import narrate
 import theme
 import trend as trend_chart
 from simulated_data import generate_eeg_window
-from data_processing import check_signal_quality, detect_artifact
+from data_processing import check_signal_quality, detect_artifact, should_hold_window
 import emotion as emotion_module
 from emotion import CHANNEL_NAMES, EmotionTracker
 from board_connection import (
@@ -47,7 +47,12 @@ HISTORY_COLUMNS = [
 ]
 
 st.set_page_config(
-    page_title="Comfort/Discomfort Visualizer", page_icon="🧠", layout="wide"
+    page_title="Sixth Sense — Comfort/Discomfort Visualizer",
+    page_icon="🧠",
+    layout="wide",
+    # Setup lives in the sidebar, so it starts open rather than leaving a
+    # first-time viewer hunting for the controls.
+    initial_sidebar_state="expanded",
 )
 theme.apply()
 
@@ -68,9 +73,11 @@ defaults = {
     "window": None,
     "run_baseline": False,
     "sim_manual": False,
+    "sim_discomfort": False,
     "sim_arousal": 0.0,
     "sim_valence": 0.0,
     "sim_artifact": None,
+    "calibration_notice": None,
 }
 for key, value in defaults.items():
     if key not in st.session_state:
@@ -99,7 +106,12 @@ def read_window(simulation_mode, discomfort=False, manual=False):
             artifact=st.session_state.get("sim_artifact"),
         )
 
-    return generate_eeg_window(discomfort=discomfort)
+    if manual:
+        return generate_eeg_window(discomfort=discomfort)
+
+    # Calibration path: always neutral, so a baseline is never recorded
+    # against whatever the discomfort toggle is set to.
+    return generate_eeg_window(arousal=0.0, valence=0.0)
 
 
 def channel_labels(window):
@@ -190,6 +202,9 @@ with st.sidebar:
     else:
         st.info("Not calibrated — values are unreferenced until you set a baseline.")
 
+    if st.session_state.calibration_notice:
+        st.info(st.session_state.pop("calibration_notice"))
+
     hardware_ready = simulation_mode or st.session_state.board is not None
 
     st.caption(
@@ -205,15 +220,31 @@ with st.sidebar:
     if start_baseline:
         progress = st.progress(0.0, text="Recording resting baseline…")
         windows = []
+        rejected = 0
         for i in range(BASELINE_WINDOWS):
-            windows.append(read_window(simulation_mode))
+            window = read_window(simulation_mode)
+            hold, _ = should_hold_window(window)
+            if hold:
+                rejected += 1
+            else:
+                windows.append(window)
             progress.progress(
                 (i + 1) / BASELINE_WINDOWS,
                 text=f"Resting baseline… {i + 1}/{BASELINE_WINDOWS}",
             )
             time.sleep(1.0)
-        tracker.set_baseline(windows)
+        baseline = tracker.set_baseline(windows)
         progress.empty()
+        if baseline is None:
+            st.session_state.calibration_notice = (
+                "Baseline failed: every calibration window was unusable. "
+                "Keep the participant still and try again."
+            )
+        elif rejected:
+            st.session_state.calibration_notice = (
+                f"Baseline used {len(windows)} clean windows; skipped "
+                f"{rejected} unusable windows."
+            )
         st.rerun()
 
     st.divider()
@@ -223,27 +254,6 @@ with st.sidebar:
     refresh_rate = st.select_slider(
         "Refresh", options=[1.0, 2.0, 5.0], value=1.0, format_func=lambda s: f"{s:g}s"
     )
-
-    st.divider()
-    st.subheader("Event summaries")
-
-    # Checked once per rerun rather than per event, and the app works
-    # unchanged when it is unavailable.
-    llm_ready = narrate.available()
-
-    if llm_ready:
-        st.success(f"Local model ready ({narrate.DEFAULT_MODEL})")
-        st.caption(
-            "Each state change is phrased for the log. The model only "
-            "rewords measurements this pipeline computed — it never sees EEG "
-            "and never decides the state. Runs locally; nothing leaves this "
-            "machine."
-        )
-    else:
-        st.caption(
-            f"No local model — summaries are skipped. To enable: "
-            f"`ollama pull {narrate.DEFAULT_MODEL}`"
-        )
 
 # --- session controls --------------------------------------------------------
 
@@ -280,13 +290,15 @@ with dashboard_tab:
                 "Drive the signal manually",
                 value=st.session_state.get("sim_manual", False),
                 help="Set valence and arousal directly instead of using the "
-                "two-state discomfort preset.",
+                "discomfort preset.",
             )
             if not st.session_state.sim_manual:
                 st.session_state.sim_discomfort = st.toggle(
                     "Simulate discomfort",
                     value=st.session_state.get("sim_discomfort", False),
-                    help="Feeds the discomfort variant of the simulated signal.",
+                    help="Feeds the discomfort variant of the simulated "
+                    "signal: raised fast-band power with suppressed "
+                    "right-frontal alpha.",
                 )
 
     # Manual drive lives outside the columns so the sliders get full width.
@@ -332,12 +344,14 @@ with dashboard_tab:
             # bands as real arousal, so such a window is held rather than
             # scored — otherwise a facial twitch reads as distress.
             artifact, artifact_fraction = detect_artifact(window)
-            if artifact:
-                result = st.session_state.tracker.hold("Movement or blink detected")
+            quality = check_signal_quality(window)
+            hold, reason = should_hold_window(window)
+            if hold:
+                result = st.session_state.tracker.hold(reason)
             else:
                 result = st.session_state.tracker.update(window)
 
-            result["signal_quality"] = check_signal_quality(window)
+            result["signal_quality"] = quality
             result["artifact_fraction"] = artifact_fraction
             result["timestamp"] = datetime.now().isoformat(timespec="seconds")
 
@@ -554,10 +568,27 @@ with events_tab:
     st.caption(
         "Every state shift during a session is logged here. Add a caregiver note "
         "and save it to history.csv."
+        + " Summaries are written from these measurements — the model never"
+        " sees EEG and never decides the state."
     )
 
     if not st.session_state.events:
-        st.write("No state shifts recorded yet.")
+        # An empty log almost always means the baseline was skipped, not that
+        # the app is broken — without one the state never leaves Stable, so no
+        # shift is ever recorded.
+        if not st.session_state.tracker.calibrated:
+            st.warning(
+                "No baseline recorded, so the state cannot move and nothing "
+                "will be logged here. Record a resting baseline in the "
+                "sidebar, then start a session."
+            )
+        elif not st.session_state.session_active:
+            st.info("Start a session — state shifts will appear here as they happen.")
+        else:
+            st.info(
+                "Session running. A shift between Stable, Moderate and Extreme "
+                "will appear here when it happens."
+            )
 
     for i, event in enumerate(st.session_state.events):
         with st.container(border=True):
@@ -571,12 +602,12 @@ with events_tab:
                 + (" · head moved" if event.get("moving") else "")
             )
 
-            # Narration is generated here rather than in the capture loop, and
-            # only once per event: the model takes a second or two, and the
-            # loop runs once per second.
-            if llm_ready and event.get("summary") is None:
-                with st.spinner("Writing summary…"):
-                    event["summary"] = narrate.narrate(event) or ""
+            # Written once per event and cached on it. No model, no network:
+            # the sentence is assembled from the numbers this pipeline already
+            # computed, so it is always available and always says only what
+            # was measured.
+            if event.get("summary") is None:
+                event["summary"] = narrate.summarize(event)
 
             if event.get("summary"):
                 st.info(event["summary"])

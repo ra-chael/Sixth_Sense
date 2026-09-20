@@ -1,118 +1,57 @@
-"""Plain-language narration of a state change, via a local LLM.
+"""Plain-language summary of a state change, written without a model.
 
-Scope, deliberately narrow: the model is given numbers this pipeline already
-computed and asked to phrase them for a caregiver. It never sees raw EEG and
-never decides the state — an LLM cannot read EEG, and letting one infer
-emotion would replace a defensible signal chain with a confident guess.
+Scope, deliberately narrow: this phrases numbers the pipeline already
+computed. It never sees raw EEG and never decides the state.
 
-Everything runs locally through Ollama, so no participant data leaves the
-machine. If Ollama is not running or the model is missing, narration is
-skipped and the app is unaffected.
+There is no LLM here, on purpose. The sentence a caregiver needs is simple
+enough to assemble directly, and a template cannot hallucinate, cannot leak
+the figures back, cannot invent a claim about the hardware, and cannot stall
+the interface waiting on a provider. Every summary is produced locally, in
+microseconds, with no key and no network.
 """
 
-import json
-import urllib.error
-import urllib.request
 
-OLLAMA_URL = "http://localhost:11434"
-DEFAULT_MODEL = "qwen3:8b"
-
-# Short, because this runs while a caregiver is waiting to read it.
-TIMEOUT_S = 20
-
-SYSTEM_PROMPT = """You write one-line notes for a caregiver monitoring a \
-non-verbal patient through an EEG comfort/discomfort visualizer.
-
-You are given measurements the system already computed. Your job is only to \
-phrase them in plain language. Follow these rules exactly:
-
-- One sentence, at most 25 words.
-- Describe what the signal did, not what the patient feels. Say "signals \
-suggest", "reading shows", not "the patient is distressed".
-- Never diagnose, never suggest medical action, never mention pain.
-- If movement was detected, say so — it means the reading may reflect \
-motion rather than a change of state.
-- If signal quality is Poor, say the reading is uncertain.
-- No preamble, no quotes, no explanation. Output the sentence only."""
+def _band(value, high, mid, labels):
+    magnitude = abs(value)
+    if magnitude >= high:
+        return labels[0]
+    if magnitude >= mid:
+        return labels[1]
+    return labels[2]
 
 
-def available(model=DEFAULT_MODEL):
-    """True when Ollama is reachable and the model is present."""
-    try:
-        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=2) as r:
-            tags = json.load(r)
-        names = [m.get("name", "") for m in tags.get("models", [])]
-        return any(n == model or n.startswith(model.split(":")[0]) for n in names)
-    except Exception:
-        return False
+def summarize(event):
+    """One caregiver-facing sentence describing a state change.
 
-
-def _describe(event):
-    """The measurements, as a compact line for the model to rephrase."""
-    parts = [
-        f"state changed from {event.get('from_state')} to {event.get('state')}",
-        f"valence {event.get('valence', 0):+.2f}",
-        f"arousal {event.get('arousal', 0):+.2f}",
-        f"signal quality {event.get('signal_quality', 'unknown')}",
-    ]
-
-    motion = event.get("motion")
-    if motion is not None:
-        parts.append(
-            "head movement detected" if event.get("moving") else "head still"
-        )
-
-    return "; ".join(parts)
-
-
-def narrate(event, model=DEFAULT_MODEL, timeout=TIMEOUT_S):
-    """One caregiver-facing sentence for a state change, or None.
-
-    Returns None on any failure — a missing narration is a cosmetic loss, and
-    nothing here is allowed to interrupt a session.
+    Describes the signal, not the person: the pipeline measures EEG activity,
+    and phrasing it as what someone feels would claim more than the
+    measurement supports.
     """
-    payload = {
-        "model": model,
-        "prompt": _describe(event),
-        "system": SYSTEM_PROMPT,
-        "stream": False,
-        "think": False,
-        "options": {
-            # Low temperature: this is rephrasing, not writing.
-            "temperature": 0.3,
-            "num_predict": 60,
-        },
-    }
+    arousal = event.get("arousal", 0.0)
+    valence = event.get("valence", 0.0)
+    rising = event.get("state") in ("Moderate", "Extreme")
 
-    try:
-        req = urllib.request.Request(
-            f"{OLLAMA_URL}/api/generate",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            text = json.load(r).get("response", "").strip()
-    except Exception:
-        return None
+    size = _band(arousal, 0.6, 0.3, ["sharply", "noticeably", "slightly"])
+    sentence = f"Activation rose {size}" if rising else f"Activation settled {size}"
 
-    return _clean(text)
+    if valence < -0.25:
+        sentence += " with a negative tone"
+    elif valence > 0.25:
+        sentence += " with a positive tone"
+
+    # Movement first: a reading taken while the head moved may be movement
+    # artefact rather than a real change, which is the most useful caveat a
+    # caregiver can be given.
+    if event.get("moving"):
+        sentence += "; the head moved, so this may be movement rather than a real change"
+    elif event.get("signal_quality") == "Poor":
+        sentence += "; signal quality was poor, so the reading is unreliable"
+    elif event.get("motion") is not None:
+        sentence += "; the head was still"
+
+    return sentence + "."
 
 
-def _clean(text):
-    """Strip the things small models add despite being told not to."""
-    if not text:
-        return None
-
-    # Some models emit a reasoning block even with think disabled.
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1].strip()
-
-    text = text.strip().strip('"').strip()
-
-    # One sentence only.
-    for end in (". ", "\n"):
-        if end in text:
-            text = text.split(end, 1)[0].rstrip(".") + "."
-            break
-
-    return text or None
+# The previous name, kept so existing callers and tests keep working.
+fallback = summarize
+narrate = summarize

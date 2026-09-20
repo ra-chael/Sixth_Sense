@@ -6,13 +6,40 @@ state on each rerun. It keeps its own previous state in sessionStorage so it
 can tell a shift from a repaint and only chime on a real change.
 """
 
+import base64
+import functools
 import json
+import os
 
 # components.html is deprecated in favour of st.iframe, but st.iframe only
 # accepts a URL or a Path — it cannot take an HTML string, and this card is
 # generated per rerun. Keeping components.html until there is a string-capable
 # replacement.
 import streamlit.components.v1 as components
+
+ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
+# Per-state artwork, inlined as data URIs because the card runs in a sandboxed
+# iframe with no filesystem access.
+#
+# Currently empty: the drawn face is used instead, because it is driven
+# continuously by valence and arousal rather than snapping between three fixed
+# pictures — the expression can be read back as the values that produced it.
+# Putting filenames here (they are in assets/) switches back to artwork.
+STATE_IMAGE = {}
+
+
+@functools.lru_cache(maxsize=8)
+def _data_uri(filename):
+    """Base64 data URI for an asset, or None when it is missing."""
+    path = os.path.join(ASSET_DIR, filename)
+    try:
+        with open(path, "rb") as handle:
+            encoded = base64.b64encode(handle.read()).decode()
+    except OSError:
+        return None
+    return f"data:image/png;base64,{encoded}"
+
 
 STATE_STYLE = {
     "Stable": {
@@ -24,7 +51,7 @@ STATE_STYLE = {
         "gradBDark": "#141E2B",
         "breath": 4.5,
         "label": "Stable",
-        "description": "Signals are steady. No sign of distress.",
+        "description": "Signals are steady and settled.",
     },
     "Moderate": {
         "core": "#A57FC0",
@@ -35,7 +62,7 @@ STATE_STYLE = {
         "gradBDark": "#2A2418",
         "breath": 3.4,
         "label": "Moderate",
-        "description": "Arousal is rising. Worth a look.",
+        "description": "The reading has turned negative. Worth a look.",
     },
     "Extreme": {
         "core": "#CC8377",
@@ -46,7 +73,7 @@ STATE_STYLE = {
         "gradBDark": "#2B1714",
         "breath": 2.6,
         "label": "Extreme",
-        "description": "Sustained high arousal with negative valence.",
+        "description": "Sustained activation with a strongly negative tone.",
     },
 }
 
@@ -76,9 +103,20 @@ def render(
             "calibrated": bool(calibrated),
             "stale": bool(stale),
             "styles": STATE_STYLE,
+            "images": {s: _data_uri(f) for s, f in STATE_IMAGE.items()},
         }
     )
-    components.html(_HTML.replace("__PAYLOAD__", payload), height=HEIGHT)
+    html = _HTML.replace("__PAYLOAD__", payload)
+
+    # A marker that changes with the state. Streamlit keys a component on its
+    # html, so two renders that differ only inside the JSON can be treated as
+    # the same document and the script never re-runs — which looks like the
+    # mascot refusing to change.
+    html = html.replace(
+        "<!--STATE-->", f"<!-- {state} {elapsed} {'stale' if stale else ''} -->"
+    )
+
+    components.html(html, height=HEIGHT)
 
 
 _HTML = r"""
@@ -86,6 +124,7 @@ _HTML = r"""
 <html>
 <head>
 <meta charset="utf-8">
+<!--STATE-->
 <style>
   * { box-sizing: border-box; }
   body {
@@ -141,6 +180,21 @@ _HTML = r"""
     0%, 100% { transform: scale(1); }
     50%      { transform: scale(1.06); }
   }
+  /* Each mascot ships already coloured for its state, so a change crossfades
+     one tinted image into the next and the artwork carries the same colour
+     signal as the gradient and the charts. */
+  .mascot {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 1.2s ease, filter 1.2s ease;
+    animation: breathe var(--breath, 4.5s) ease-in-out infinite;
+  }
+  .mascot.on { opacity: 1; }
+
   #face { position: absolute; inset: 0; }
   /* The face is redrawn each tick; easing the geometry keeps it morphing
      rather than jumping between readings. */
@@ -222,9 +276,13 @@ _HTML = r"""
   <div id="inner">
     <div id="orbwrap">
       <div id="orb"></div>
-      <!-- Every feature is driven by a number: the eyes by arousal, the brows
-           and mouth by valence. Nothing here is a fixed per-state cartoon, so
-           the face can be read back as the values that produced it. -->
+      <!-- Mascot per state, tinted to the state colour. Two stacked layers so
+           a change crossfades rather than snapping. -->
+      <img class="mascot" id="mascotA" alt="">
+      <img class="mascot" id="mascotB" alt="">
+      <!-- Fallback face, used only when the mascot images are missing. Every
+           feature is driven by a number: the eyes by arousal, the brows and
+           mouth by valence. -->
       <svg id="face" viewBox="0 0 132 132">
         <path id="browL" fill="none" stroke="#fff" stroke-width="3.4"
               stroke-linecap="round" opacity="0"/>
@@ -314,7 +372,49 @@ incoming.style.background = bg;
 outgoing.classList.remove("on");
 requestAnimationFrame(() => incoming.classList.add("on"));
 
+// --- mascot ---------------------------------------------------------------
+// When the artwork is available it replaces the orb entirely. Two stacked
+// images crossfade, alternating which is on top so consecutive changes keep
+// fading rather than the second one snapping.
+const mascotSrc = (D.images || {})[D.state];
+const hasMascot = Boolean(mascotSrc);
+
+if (hasMascot) {
+  const mSlot = (Number(sessionStorage.getItem("mslot")) || 0) ^ 1;
+  sessionStorage.setItem("mslot", String(mSlot));
+  const mIn = document.getElementById(mSlot ? "mascotA" : "mascotB");
+  const mOut = document.getElementById(mSlot ? "mascotB" : "mascotA");
+
+  mIn.style.setProperty("--breath", S.breath + "s");
+
+  const reveal = () => {
+    mOut.classList.remove("on");
+    mIn.classList.add("on");
+    document.getElementById("orb").style.display = "none";
+    document.getElementById("face").style.display = "none";
+  };
+
+  mIn.onerror = () => {
+    // Fall back to the drawn face rather than showing an empty card.
+    document.getElementById("orb").style.display = "";
+    document.getElementById("face").style.display = "";
+  };
+
+  // decode() resolves whether the image is fresh or already cached, which
+  // onload does not: assigning a src the browser has cached can complete
+  // before the handler is attached, and the swap then never happened.
+  mIn.src = mascotSrc;
+  if (mIn.decode) {
+    mIn.decode().then(reveal).catch(reveal);
+  } else {
+    mIn.onload = reveal;
+    if (mIn.complete) reveal();
+  }
+}
+
 const orb = document.getElementById("orb");
+// The orb stays visible until the mascot has decoded — the onload handler
+// above hides it. Hiding it here would blank the card while the image loads.
 orb.style.setProperty("--breath", S.breath + "s");
 orb.style.background = `radial-gradient(circle at 34% 30%, ${core} 0%, ${shade(core, -22)} 100%)`;
 orb.style.boxShadow = `0 12px 40px ${core}59`;
@@ -334,11 +434,13 @@ const a = Math.max(-1, Math.min(1, D.arousal));
 const a01 = Math.max(0, Math.min(1, (a + 1) / 2));
 const eyeRy = 3.6 + a01 * 3.6;
 const eyeRx = 5.2 + a01 * 1.0;
-["eyeL", "eyeR"].forEach((id) => {
-  const e = document.getElementById(id);
-  e.setAttribute("rx", eyeRx.toFixed(2));
-  e.setAttribute("ry", eyeRy.toFixed(2));
-});
+if (!hasMascot) {
+  ["eyeL", "eyeR"].forEach((id) => {
+    const e = document.getElementById(id);
+    e.setAttribute("rx", eyeRx.toFixed(2));
+    e.setAttribute("ry", eyeRy.toFixed(2));
+  });
+}
 
 // Brows appear only as valence goes negative, and angle in proportion to it.
 // A flat brow at neutral would read as a drawn-on feature; fading them in
@@ -346,22 +448,26 @@ const eyeRx = 5.2 + a01 * 1.0;
 const tense = Math.max(0, -v);
 const browOp = tense * 0.85;
 const drop = tense * 5.5;
-const browL = document.getElementById("browL");
-const browR = document.getElementById("browR");
-browL.style.opacity = browOp;
-browR.style.opacity = browOp;
-browL.setAttribute("d", `M 40 ${44 - drop} L 56 ${41 + drop}`);
-browR.setAttribute("d", `M 76 ${41 + drop} L 92 ${44 - drop}`);
+if (!hasMascot) {
+  const browL = document.getElementById("browL");
+  const browR = document.getElementById("browR");
+  browL.style.opacity = browOp;
+  browR.style.opacity = browOp;
+  browL.setAttribute("d", `M 40 ${44 - drop} L 56 ${41 + drop}`);
+  browR.setAttribute("d", `M 76 ${41 + drop} L 92 ${44 - drop}`);
+}
 
 // Mouth: a wider swing than before, so the states are actually distinct.
 // Arousal also shortens it slightly, which reads as tension without needing
 // an open, anguished mouth.
 const curve = 80 - v * 20;
 const half = 22 - a01 * 4;
-document.getElementById("mouth").setAttribute(
-  "d",
-  `M ${66 - half} 82 Q 66 ${curve} ${66 + half} 82`
-);
+if (!hasMascot) {
+  document.getElementById("mouth").setAttribute(
+    "d",
+    `M ${66 - half} 82 Q 66 ${curve} ${66 + half} 82`
+  );
+}
 
 document.getElementById("label").textContent = S.label;
 document.getElementById("desc").textContent = S.description;

@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 import hero
+import trend as trend_chart
 from simulated_data import generate_eeg_window
 from data_processing import check_signal_quality
 from emotion import CHANNEL_NAMES, EmotionTracker
@@ -274,6 +275,7 @@ with dashboard_tab:
             muted=st.session_state.muted,
             night=st.session_state.night,
             elapsed=elapsed_text(),
+            calibrated=latest["calibrated"],
         )
 
         if not latest["calibrated"]:
@@ -286,9 +288,15 @@ with dashboard_tab:
 
         with left:
             st.subheader("Signal trend")
-            if len(st.session_state.trend) > 1:
-                trend_df = pd.DataFrame(list(st.session_state.trend)).set_index("t")
-                st.line_chart(trend_df[["valence", "arousal"]], height=240)
+            chart = trend_chart.render(
+                st.session_state.trend, latest["state"], st.session_state.night
+            )
+            if chart is not None:
+                st.altair_chart(chart, use_container_width=True)
+                st.caption(
+                    "Solid line: arousal, coloured by current state. Dashed: "
+                    "valence. Dotted rule: the Moderate threshold."
+                )
             else:
                 st.caption("Collecting…")
 

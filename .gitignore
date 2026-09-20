@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS
+.DS_Store
+
+# Large local artifacts — video files exceed GitHub's 100MB limit
+video-demo/
+
+# Session output written at runtime
+real-time-bci-stream/recordings/
+real-time-bci-stream/history.csv

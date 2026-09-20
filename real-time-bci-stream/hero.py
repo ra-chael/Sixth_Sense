@@ -50,10 +50,10 @@ STATE_STYLE = {
     },
 }
 
-HEIGHT = 340
+HEIGHT = 430
 
 
-def render(state, valence, arousal, quality, muted, night, elapsed):
+def render(state, valence, arousal, quality, muted, night, elapsed, calibrated=True):
     payload = json.dumps(
         {
             "state": state,
@@ -63,6 +63,7 @@ def render(state, valence, arousal, quality, muted, night, elapsed):
             "muted": bool(muted),
             "night": bool(night),
             "elapsed": elapsed,
+            "calibrated": bool(calibrated),
             "styles": STATE_STYLE,
         }
     )
@@ -83,8 +84,8 @@ _HTML = r"""
 
   #card {
     position: relative;
-    height: 320px;
-    border-radius: 18px;
+    height: 410px;
+    border-radius: 20px;
     overflow: hidden;
     border: 1px solid var(--border);
     --border: #E8DFD1;
@@ -117,7 +118,7 @@ _HTML = r"""
     color: var(--text);
   }
 
-  #orbwrap { flex: 0 0 auto; position: relative; width: 132px; height: 132px; }
+  #orbwrap { flex: 0 0 auto; position: relative; width: 168px; height: 168px; }
   #orb {
     position: absolute;
     inset: 0;
@@ -157,12 +158,48 @@ _HTML = r"""
     overflow: hidden;
   }
   #fill { height: 100%; width: 0%; border-radius: 3px; transition: width 1s ease, background 1.2s ease; }
+
+  /* Head map. EEG localises to the scalp and nothing else, so the diagram
+     shows a head only — the glow tracks intensity, never a body region we
+     cannot actually measure. */
+  #headwrap {
+    flex: 0 0 auto;
+    margin-left: auto;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  @media (max-width: 720px) { #headwrap { display: none; } }
+  #headwrap .cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+  }
+  #glow { transition: opacity 1s ease, r 1s ease, fill 1.2s ease; }
+  .site { transition: opacity 1s ease, fill 1.2s ease; }
+
+  #uncal {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 20px;
+    background: rgba(200,140,60,0.16);
+    color: #A9752F;
+    border: 1px solid rgba(200,140,60,0.32);
+    display: none;
+  }
+  #card.night #uncal { color: #E8B478; }
 </style>
 </head>
 <body>
 <div id="card">
   <div class="layer" id="layerA"></div>
   <div class="layer" id="layerB"></div>
+  <div id="uncal">No baseline</div>
   <div id="inner">
     <div id="orbwrap">
       <div id="orb"></div>
@@ -183,6 +220,38 @@ _HTML = r"""
         <div class="stat"><div class="k">Session</div><div class="v" id="se">—</div></div>
       </div>
       <div id="bar"><div id="fill"></div></div>
+    </div>
+
+    <div id="headwrap">
+      <svg width="132" height="148" viewBox="0 0 132 148">
+        <defs>
+          <radialGradient id="gl">
+            <stop offset="0%"   id="gl0" stop-opacity="0.85"/>
+            <stop offset="100%" id="gl1" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <!-- head outline, facing forward -->
+        <ellipse cx="66" cy="74" rx="41" ry="52"
+                 fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/>
+        <!-- ears -->
+        <ellipse cx="24" cy="74" rx="5" ry="10"
+                 fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+        <ellipse cx="108" cy="74" rx="5" ry="10"
+                 fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+        <!-- nasion, marks the front so the frontal sites read correctly -->
+        <path d="M 60 24 L 66 15 L 72 24" fill="none"
+              stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+        <!-- intensity bloom over the frontal region -->
+        <circle id="glow" cx="66" cy="48" r="26" fill="url(#gl)" opacity="0"/>
+        <!-- the two electrodes the estimate actually depends on -->
+        <circle class="site" id="fp1" cx="50" cy="40" r="5"/>
+        <circle class="site" id="fp2" cx="82" cy="40" r="5"/>
+        <text x="50" y="30" text-anchor="middle" font-size="9"
+              fill="currentColor" opacity="0.55">Fp1</text>
+        <text x="82" y="30" text-anchor="middle" font-size="9"
+              fill="currentColor" opacity="0.55">Fp2</text>
+      </svg>
+      <div class="cap">Frontal activity</div>
     </div>
   </div>
 </div>
@@ -231,6 +300,29 @@ document.getElementById("se").textContent = D.elapsed;
 const fill = document.getElementById("fill");
 fill.style.background = core;
 fill.style.width = Math.round(((D.arousal + 1) / 2) * 100) + "%";
+
+if (!D.calibrated) document.getElementById("uncal").style.display = "block";
+
+// --- head map ------------------------------------------------------------
+// The bloom tracks arousal only. EEG localises to the scalp, so nothing here
+// claims a body region the signal cannot speak to.
+const a01 = Math.max(0, Math.min(1, (D.arousal + 1) / 2));
+document.getElementById("gl0").setAttribute("stop-color", core);
+document.getElementById("gl1").setAttribute("stop-color", core);
+
+const glow = document.getElementById("glow");
+glow.setAttribute("r", 20 + a01 * 16);
+glow.style.opacity = 0.15 + a01 * 0.75;
+
+// Valence is a left/right alpha difference, so the two frontal sites are lit
+// asymmetrically — the side driving the reading is the brighter one.
+const tilt = Math.max(-1, Math.min(1, D.valence));
+const fp1 = document.getElementById("fp1");
+const fp2 = document.getElementById("fp2");
+fp1.setAttribute("fill", core);
+fp2.setAttribute("fill", core);
+fp1.style.opacity = 0.35 + Math.max(0, -tilt) * 0.6;
+fp2.style.opacity = 0.35 + Math.max(0, tilt) * 0.6;
 
 // --- audio ---------------------------------------------------------------
 // Only a genuine change of state chimes. A rerun that repaints the same

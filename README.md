@@ -286,6 +286,12 @@ calibration cannot be taken against a cranked-up setting.
 
 The parts of this that were not obvious going in.
 
+**The hardware worked.** All eight channels came up clean in the OpenBCI GUI
+on the cap — every channel Not Railed with visible EEG, at 250 Hz over the
+BLE dongle on battery power. Getting a full 8-channel montage reading
+properly was not a given, and it means every limitation below is about our
+method rather than our recording.
+
 **Simulation hides the bugs that matter.** Synthetic EEG never returns an
 empty buffer, never goes flat, and never blinks. Three real defects only
 surfaced when we ran actual data through the pipeline: the board returns 24
@@ -328,11 +334,15 @@ about — and each one has a next step we know how to take.
 Only Fp1 and Fp2 feed the estimate. The other six are recorded and displayed
 but unused.
 
-This is a deliberate trade, not an oversight, and not a signal-quality
-problem — all eight channels record cleanly on our cap. It is that both
-measurements are *defined* on the frontal pair: valence is frontal alpha
-asymmetry, an Fp1-vs-Fp2 quantity by construction, and frontal beta is the
-standard arousal index.
+**This is not a signal-quality limitation.** All eight channels were verified
+working in the OpenBCI GUI on the cap — the hardware delivers eight usable
+channels and we are choosing to use two.
+
+The reason is that both measurements are *defined* on the frontal pair:
+valence is frontal alpha asymmetry, an Fp1-vs-Fp2 quantity by construction,
+and frontal beta is the standard arousal index. Picking that method — a
+literature-backed 2D valence/arousal model — is what fixed the channel count
+at two, rather than a separate decision to discard the rest.
 
 Bringing in the other six would mean choosing a weighting across them, and we
 have no labelled affective data to justify one. That adds parameters rather
@@ -393,6 +403,17 @@ What this was built and tested against:
 
 A Cyton **Daisy** would be 16 channels at 125 Hz and needs `CHANNEL_NAMES`
 changed as well — this app assumes the 8-channel board.
+
+### Signal check
+
+**All eight channels were verified working in the OpenBCI GUI** during live
+testing on the cap — every channel reading "Not Railed" with visible EEG.
+
+This is worth stating because it rules out an explanation the design might
+otherwise suggest. Only two channels feed the estimate, and that is *not* a
+signal-quality limitation: the hardware delivers eight usable channels. The
+narrowness is in the method, not the recording (see
+[Two channels of eight](#two-channels-of-eight)).
 
 ## Electrode placement
 

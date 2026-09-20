@@ -193,14 +193,19 @@ confidence signal is worse than none.
 ## Likely questions
 
 **"Why only 2 of 8 channels?"**
-> All eight record fine — signal quality isn't the reason. It's that the two
-> measurements we trust are both *defined* on the frontal pair: valence is
-> frontal alpha asymmetry, which is specifically an Fp1-vs-Fp2 quantity, and
-> frontal beta is the standard arousal index. Adding the other six would mean
-> inventing a weighting we have no data to justify, so we'd be adding
-> parameters rather than information. We record and display all eight so the
-> narrowness is visible, and multi-channel fusion is the obvious next step —
-> we didn't ship it because we couldn't validate it in time.
+> First — all eight work. We verified every channel in the OpenBCI GUI on the
+> cap, all reading Not Railed with clean EEG. So this isn't a signal problem;
+> we have eight usable channels and we're using two.
+>
+> The reason is that both measurements are *defined* on the frontal pair.
+> Valence is frontal alpha asymmetry — an Fp1-vs-Fp2 quantity by
+> construction — and frontal beta is the standard arousal index. Choosing that
+> method is what fixed the channel count, rather than a separate decision to
+> throw the others away. Using all eight would mean inventing a weighting we
+> have no labelled data to justify, which adds parameters rather than
+> information. We record and display all eight so the narrowness is visible,
+> and multi-channel fusion is the obvious next step — we didn't ship it
+> because we couldn't validate it in time.
 
 **"But you have 8 good channels — surely more data is better?"**
 > Only if you know how to combine them. With no labelled affective data, any

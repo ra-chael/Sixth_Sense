@@ -1,7 +1,10 @@
 # Sixth_Sense
 A caregiver assistance tool to sense and address emotional shifts
 
-Current state: Partially functional, built on simulated EEG data until we have the real thing.
+Estimates a caregiver-facing comfort/discomfort state from live EEG. Runs on
+an OpenBCI Cyton, or on synthetic signal when no hardware is attached.
+
+Demonstration prototype — not a medical pain detector.
 
 ---
 
@@ -116,11 +119,13 @@ which drives the state up so you can see a full shift without a participant.
 | Reading | Source | Meaning |
 |---|---|---|
 | **Valence** | Frontal alpha asymmetry (Fp2 − Fp1) | Negative = withdrawal/negative affect |
-| **Arousal** | Frontal beta / (alpha + theta) | Higher = more activated |
+| **Arousal** | Frontal (beta + ½·gamma) / (alpha + theta) | Higher = more activated |
 | **State** | Arousal, aggravated by negative valence | Stable / Moderate / Extreme |
+| **Head movement** | Cyton accelerometer | Context only — never changes the estimate |
 
 Both are smoothed (EMA) and the state uses hysteresis, so a single noisy window
-cannot flip the display.
+cannot flip the display. Windows carrying a blink or muscle transient are held
+rather than scored.
 
 ## How it works
 
@@ -134,12 +139,15 @@ Cyton board
 board_connection.capture_window()      ← keeps only the EEG rows
    │
    ▼
+data_processing.detect_artifact()      ← blink / muscle transient?
+   │  yes → hold the previous reading, skip the rest
+   ▼
 emotion.band_powers()                  ← Welch PSD, per channel
-   │  theta 4-8 Hz · alpha 8-13 Hz · beta 13-30 Hz
+   │  theta 4-8 · alpha 8-13 · beta 13-30 · gamma 30-45 Hz
    ▼
 emotion.raw_valence_arousal()
    │  valence = ln(alpha_Fp2) − ln(alpha_Fp1)
-   │  arousal = beta / (alpha + theta), frontal average
+   │  arousal = (beta + ½·gamma) / (alpha + theta), frontal average
    ▼
 EmotionTracker.update()
    │  1. subtract this participant's baseline  → z-scores
@@ -192,6 +200,44 @@ valence (withdrawal) pushes the same arousal into a higher level. So a
 participant who is animated and positive reads Stable, while one equally
 activated but negative reads Moderate or Extreme.
 
+### Why gamma is weighted at half
+
+Gamma (30–45 Hz) is the band most consistently associated with pain and high
+arousal, so a discomfort estimate that ignored it would have an obvious hole.
+It is capped below 50 Hz to stay clear of mains hum, and contributes at
+`GAMMA_WEIGHT = 0.5` rather than equally with beta — scalp gamma is also
+where jaw and neck muscle activity lands, so it is informative but the least
+artifact-free band in use.
+
+### Why some windows are held rather than scored
+
+A blink or jaw clench is a large, brief excursion that lands in the same fast
+bands as genuine arousal. Scoring those windows would make a facial twitch
+read as distress, so `detect_artifact` flags them and the previous reading is
+repeated instead — the card dims and names the reason.
+
+The check is **per channel**, not window-wide: a blink is brief and mostly
+frontal, so averaging it across eight channels dilutes it below any sensible
+threshold. The worst channel decides.
+
+| Window | Caught | Worst channel |
+|---|---|---|
+| Clean | no | 0% |
+| Eyeblink | yes | ~6% |
+| Jaw clench | yes | ~13% |
+| Genuine high arousal | no | 0% |
+
+### Why head movement is shown but never used
+
+The Cyton streams accelerometer data alongside EEG. It is displayed beside the
+reading and deliberately excluded from the estimate.
+
+The reason it is there: EEG alone cannot distinguish a patient who is
+distressed from one who is shifting in bed — both raise fast-band power. Head
+movement lets a caregiver see that difference. The reason it is not in the
+estimate: the threshold is uncalibrated, and a movement signal feeding the
+state could turn a restless patient into a false alarm.
+
 ### Where to change things
 
 | Want to change | File | What to edit |
@@ -201,26 +247,194 @@ activated but negative reads Moderate or Extreme.
 | Smoothing amount | `emotion.py` | `EMA_ALPHA` (higher = twitchier) |
 | Baseline length | `app.py` | `BASELINE_WINDOWS` |
 | Colors, animation, chime | `hero.py` | `STATE_STYLE`, then the HTML block |
-| Frequency bands | `emotion.py` | `BANDS` |
+| Frequency bands | `emotion.py` | `BANDS`, `GAMMA_WEIGHT` |
+| Artifact sensitivity | `data_processing.py` | `ARTIFACT_UV`, `ARTIFACT_FRACTION` |
+| Movement threshold | `app.py` | `MOTION_THRESHOLD` |
 
 ### Testing without hardware
 
-Simulation mode generates synthetic 8-channel EEG, and the **Simulate
-discomfort** toggle raises beta while suppressing right-frontal alpha — so it
-exercises both axes, not just arousal. The full Stable → Moderate → Extreme →
-Stable cycle is reproducible with no board attached, which is how the state
-logic was verified.
+Simulation mode synthesises 8-channel EEG with the spectral properties the
+estimator reads, so the whole pipeline runs unchanged — the sliders are not
+shortcuts past it.
+
+**Simulate discomfort** is the two-state preset: it raises fast-band power and
+suppresses right-frontal alpha, exercising both axes rather than arousal
+alone.
+
+**Drive the signal manually** gives finer control during a session:
+
+| Control | Range | What it does |
+|---|---|---|
+| Arousal | −1 … +1 | Sets fast-band amplitude against alpha/theta |
+| Valence | −1 … +1 | Sets right-frontal alpha relative to left |
+| Inject artifact | none / blink / clench | Adds the transient the guard should reject |
+
+The reading lags the sliders by a few seconds — that is the moving average,
+working as intended. All three states are reachable, which is how the
+thresholds were checked:
+
+| Sliders | Measured | State |
+|---|---|---|
+| a +0.0, v +0.0 | +0.00, +0.13 | Stable |
+| a +0.3, v −0.2 | +0.19, −0.37 | Moderate |
+| a +0.6, v −0.4 | +0.46, −0.54 | Extreme |
+
+Baseline recording ignores the sliders and always uses a neutral signal, so a
+calibration cannot be taken against a cranked-up setting.
+
+## What we tried, and what we learned
+
+The parts of this that were not obvious going in.
+
+**Simulation hides the bugs that matter.** Synthetic EEG never returns an
+empty buffer, never goes flat, and never blinks. Three real defects only
+surfaced when we ran actual data through the pipeline: the board returns 24
+rows, not 8 (accelerometer and timestamps ride alongside the EEG, and we were
+treating all of them as brain signal); an empty buffer right after
+`start_stream()` crashed the estimator; and a flat channel produced a NaN
+that the moving average then latched onto permanently, poisoning the rest of
+the session. All three would have appeared for the first time in front of a
+participant.
+
+**The artifact guard does more work than expected.** On synthetic signal it
+rejects nothing. On real recorded EEG it held roughly a third of windows —
+blinks and movement are simply that common. That number is itself a finding:
+a discomfort detector without artifact rejection would be reporting facial
+muscle activity as distress a third of the time.
+
+**Averaging hid the blinks.** Our first artifact check averaged across all
+eight channels and caught almost nothing, because a blink is brief and mostly
+frontal. Judging each channel separately and letting the worst one decide
+fixed it.
+
+**A calibrated baseline is not optional.** Band power varies by an order of
+magnitude between people and placements. Without a per-participant resting
+baseline the state thresholds are arbitrary numbers. We also had to floor the
+baseline spread: a very consistent 20-second baseline made ordinary drift look
+like a large deviation and pegged the display at its limits.
+
+**Sample rate has to come from the board.** The band edges are in Hz, so
+assuming a rate that differs from the hardware silently measures the wrong
+frequencies — an "alpha" reading that is really beta, with nothing visibly
+broken. The app now reads the rate from the board on connect and displays it.
+
+## Limitations and future work
+
+Stated plainly, because these are the first things a reviewer should ask
+about — and each one has a next step we know how to take.
+
+### Two channels of eight
+
+Only Fp1 and Fp2 feed the estimate. The other six are recorded and displayed
+but unused.
+
+This is a deliberate trade, not an oversight: the frontal pair is what stays
+reliable on a dry-electrode cap in a noisy room, and two trusted channels beat
+eight noisy ones. We would rather defend a narrow model than ship a wide one
+we cannot explain.
+
+**Next:** use the posterior channels as corroboration — if central and
+parietal alpha track the frontal reading, the signal is more likely neural
+than artifact. That is a validation step, not a bigger model, and it needs a
+labelled session to check against.
+
+### No affective ground truth
+
+The valence and arousal mappings come from the affective-EEG literature, not
+from labelled data collected with this hardware. Nothing here has been checked
+against a participant reporting how they actually felt.
+
+**Next:** run sessions where a participant self-reports comfort on a scale
+while wearing the cap, then check whether the estimate correlates. The app
+already logs every reading to `history.csv` with a caregiver note field, so
+the data collection path exists — what is missing is participants and time.
+
+### EEG only
+
+No heart rate, respiration, or skin conductance, all of which carry affective
+signal. Head movement is read from the accelerometer but shown as context
+rather than used.
+
+Note: the accelerometer has read 0.000 g on all three axes in our bench
+testing so far, which means it is either disabled in the board's current mode
+or not being sampled — worth confirming against a moving board before relying
+on the reading. This is also why it stays display-only.
+
+**Next:** the accelerometer is the cheapest addition — it is already in the
+Cyton stream. Promoting it from display to a confidence weight would let the
+app say "high arousal, but the patient was moving" rather than leaving the
+caregiver to notice. We did not ship that because the movement threshold is
+uncalibrated and a false confidence signal is worse than none.
+
+### Not a pain detector
+
+It reports a state estimate derived from band power. It cannot diagnose, and
+it is not a medical device. Nothing about the current validation would support
+a clinical claim, and we are not making one.
+
+## Hardware
+
+What this was built and tested against:
+
+| Part | Detail |
+|---|---|
+| Board | OpenBCI Cyton V3-32, 8 channels |
+| Link | BLE USB dongle (GPIO 6 position) |
+| Power | 6 V battery pack — the board runs untethered |
+| Cap | Fabric cap with white electrode holders, ribbon cable to the board |
+| Electrodes | Touch-proof leads, gel or paste at each site |
+| Sample rate | 250 Hz (read from the board, not assumed) |
+
+A Cyton **Daisy** would be 16 channels at 125 Hz and needs `CHANNEL_NAMES`
+changed as well — this app assumes the 8-channel board.
 
 ## Electrode placement
 
-Assumes the OpenBCI Cyton default 10-20 layout, in channel order:
+### Check the channel mapping first
+
+This is the setting most likely to be wrong, and its failure is silent: if
+the frontal pair is not on the pins the app thinks it is, every reading still
+looks confident but describes a different part of the head.
+
+The app defaults to BrainFlow's Cyton ordering, frontal-first:
 
 ```
-Fp1  Fp2  C3  C4  P7  P8  O1  O2
+pin  1    2    3    4    5    6    7    8
+    Fp1  Fp2  C3   C4   P7   P8   O1   O2
 ```
+
+**But the montage card that ships with some OpenBCI caps numbers
+posterior-first** — `1 = O2`, `2 = P4`, `3 = C4`. If that is how the cap is
+wired, the default above is wrong and `valence` would be computing occipital
+alpha asymmetry rather than frontal.
+
+`emotion.py` carries both orderings — `CHANNEL_NAMES` (the default) and
+`CHANNEL_NAMES_POSTERIOR_FIRST`. Set the one that matches the cap.
+
+**How to tell which you have**, without guessing:
+
+1. Stream in the OpenBCI GUI with the cap on.
+2. Ask the wearer to blink hard several times.
+3. Blinks appear as large, slow deflections **on the frontal channels only**.
+   Whichever channel numbers jump are your frontal pins.
+4. Then ask them to close their eyes for ten seconds. Alpha (a clear ~10 Hz
+   rhythm) rises strongest at the **occipital** sites — that identifies the
+   other end of the cap.
 
 **Fp1 and Fp2 matter most** — valence is unavailable without that frontal pair.
-To change the layout, edit `CHANNEL_NAMES` in `emotion.py`.
+
+### Sample rate
+
+Read from the board on connect, not assumed, and shown under the connection
+status so it can be checked at a glance. A Cyton reports 250 Hz; a Cyton Daisy
+reports 125 Hz and has 16 channels, which would also need `CHANNEL_NAMES`
+updated.
+
+This matters more than it looks. Every band edge is in Hz, so if the app
+assumed a rate the hardware was not using, the "alpha" band would be measuring
+some other frequency entirely — and nothing would appear broken. One value in
+`emotion.py` governs the whole pipeline; the other modules read it from there
+rather than keeping their own copy.
 
 ## Files
 
@@ -230,14 +444,36 @@ order — each one only depends on the ones above it:
 | File | Role |
 |---|---|
 | `simulated_data.py` | Synthetic 8-channel EEG. Start here — it defines the window shape (`8 × 250`) everything else expects. |
-| `board_connection.py` | Opens/closes the Cyton over BrainFlow and returns the same window shape as the simulator, so the rest of the app cannot tell them apart. |
-| `data_processing.py` | Band powers and the signal-quality heuristic. |
+| `board_connection.py` | Opens/closes the Cyton over BrainFlow and returns the same window shape as the simulator, so the rest of the app cannot tell them apart. Also reads the accelerometer, kept in a separate function so it cannot affect an EEG capture. |
+| `data_processing.py` | Band powers, signal quality, and the blink/muscle artifact guard. |
 | `emotion.py` | The actual detection — valence, arousal, baseline, smoothing, state. Most of the science lives here. |
 | `hero.py` | The animated card, as a self-contained HTML/JS island. No detection logic. |
+| `theme.py` | Page styling — fonts, colours, and the Streamlit chrome overrides. |
+| `trend.py` | The Altair charts: the signal trend and the raw per-electrode traces. |
 | `app.py` | Streamlit UI and the once-per-second loop that wires the above together. |
 
 If you are changing **what is detected**, you want `emotion.py`. If you are
 changing **how it looks**, you want `hero.py`. They do not overlap.
+
+## Before a session with a participant
+
+In order. Each step has cost us a session at least once.
+
+1. **Battery in, board on.** The Cyton runs off its battery pack, not USB. A
+   flat pack looks identical to a connection fault.
+2. **Dongle switch on GPIO 6.** The other position does not stream.
+3. **Quit the OpenBCI GUI completely.** Not "stop stream" — quit. It holds the
+   serial port even while sitting on its start screen, and the port takes one
+   process at a time.
+4. **Check the channel mapping** (above) if this cap has not been verified.
+5. **Electrodes wetted and seated.** In the GUI, channels should read "Not
+   Railed". A railed channel is a contact problem, not a brain-signal problem.
+6. **Connect in the app** and confirm the sample rate shown under the
+   connection status is what you expect.
+7. **Record the resting baseline** — 20 s, participant still, eyes open. Do
+   this while they are actually calm: a baseline taken while they are already
+   activated sets their "rest" too high and the state will never leave Stable.
+8. **Start session.**
 
 ## Troubleshooting
 

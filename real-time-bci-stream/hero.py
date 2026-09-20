@@ -20,8 +20,8 @@ STATE_STYLE = {
         "coreDark": "#7FAFCF",
         "gradA": "#CFE1EC",
         "gradB": "#E7F1F5",
-        "gradADark": "#2B3D4A",
-        "gradBDark": "#243038",
+        "gradADark": "#1E4257",
+        "gradBDark": "#141E2B",
         "breath": 4.5,
         "label": "Stable",
         "description": "Signals are steady. No sign of distress.",
@@ -31,8 +31,8 @@ STATE_STYLE = {
         "coreDark": "#BF9BD6",
         "gradA": "#E7D9EF",
         "gradB": "#F5EBBE",
-        "gradADark": "#3A2F45",
-        "gradBDark": "#413B28",
+        "gradADark": "#4A2F63",
+        "gradBDark": "#2A2418",
         "breath": 3.4,
         "label": "Moderate",
         "description": "Arousal is rising. Worth a look.",
@@ -42,8 +42,8 @@ STATE_STYLE = {
         "coreDark": "#DE9788",
         "gradA": "#EFD1CB",
         "gradB": "#F8E4DF",
-        "gradADark": "#48302C",
-        "gradBDark": "#3D2A27",
+        "gradADark": "#6B2F26",
+        "gradBDark": "#2B1714",
         "breath": 2.6,
         "label": "Extreme",
         "description": "Sustained high arousal with negative valence.",
@@ -53,7 +53,17 @@ STATE_STYLE = {
 HEIGHT = 430
 
 
-def render(state, valence, arousal, quality, muted, night, elapsed, calibrated=True):
+def render(
+    state,
+    valence,
+    arousal,
+    quality,
+    muted,
+    night,
+    elapsed,
+    calibrated=True,
+    stale=False,
+):
     payload = json.dumps(
         {
             "state": state,
@@ -64,6 +74,7 @@ def render(state, valence, arousal, quality, muted, night, elapsed, calibrated=T
             "night": bool(night),
             "elapsed": elapsed,
             "calibrated": bool(calibrated),
+            "stale": bool(stale),
             "styles": STATE_STYLE,
         }
     )
@@ -131,6 +142,11 @@ _HTML = r"""
     50%      { transform: scale(1.06); }
   }
   #face { position: absolute; inset: 0; }
+  /* The face is redrawn each tick; easing the geometry keeps it morphing
+     rather than jumping between readings. */
+  #eyeL, #eyeR { transition: rx 0.9s ease, ry 0.9s ease; }
+  #browL, #browR { transition: opacity 0.9s ease, d 0.9s ease; }
+  #mouth { transition: d 0.9s ease; }
 
   #label {
     font-size: 40px;
@@ -162,11 +178,14 @@ _HTML = r"""
   /* Head map. EEG localises to the scalp and nothing else, so the diagram
      shows a head only — the glow tracks intensity, never a body region we
      cannot actually measure. */
+  /* The outline needs its own colour rather than inheriting the dim body
+     text, which vanished against the card's own background. */
   #headwrap {
     flex: 0 0 auto;
     margin-left: auto;
     text-align: center;
-    color: var(--text-dim);
+    color: var(--text);
+    opacity: 0.85;
   }
   @media (max-width: 720px) { #headwrap { display: none; } }
   #headwrap .cap {
@@ -203,9 +222,18 @@ _HTML = r"""
   <div id="inner">
     <div id="orbwrap">
       <div id="orb"></div>
+      <!-- Every feature is driven by a number: the eyes by arousal, the brows
+           and mouth by valence. Nothing here is a fixed per-state cartoon, so
+           the face can be read back as the values that produced it. -->
       <svg id="face" viewBox="0 0 132 132">
-        <circle cx="48" cy="56" r="5.5" fill="#fff" opacity="0.92"/>
-        <circle cx="84" cy="56" r="5.5" fill="#fff" opacity="0.92"/>
+        <path id="browL" fill="none" stroke="#fff" stroke-width="3.4"
+              stroke-linecap="round" opacity="0"/>
+        <path id="browR" fill="none" stroke="#fff" stroke-width="3.4"
+              stroke-linecap="round" opacity="0"/>
+        <ellipse id="eyeL" cx="48" cy="56" rx="5.5" ry="5.5"
+                 fill="#fff" opacity="0.92"/>
+        <ellipse id="eyeR" cx="84" cy="56" rx="5.5" ry="5.5"
+                 fill="#fff" opacity="0.92"/>
         <path id="mouth" fill="none" stroke="#fff" stroke-width="4.5"
               stroke-linecap="round" opacity="0.92"/>
       </svg>
@@ -232,24 +260,24 @@ _HTML = r"""
         </defs>
         <!-- head outline, facing forward -->
         <ellipse cx="66" cy="74" rx="41" ry="52"
-                 fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/>
+                 fill="none" stroke="currentColor" stroke-width="2" opacity="0.75"/>
         <!-- ears -->
         <ellipse cx="24" cy="74" rx="5" ry="10"
-                 fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+                 fill="none" stroke="currentColor" stroke-width="1.8" opacity="0.6"/>
         <ellipse cx="108" cy="74" rx="5" ry="10"
-                 fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+                 fill="none" stroke="currentColor" stroke-width="1.8" opacity="0.6"/>
         <!-- nasion, marks the front so the frontal sites read correctly -->
         <path d="M 60 24 L 66 15 L 72 24" fill="none"
-              stroke="currentColor" stroke-width="1.4" opacity="0.4"/>
+              stroke="currentColor" stroke-width="1.8" opacity="0.6"/>
         <!-- intensity bloom over the frontal region -->
         <circle id="glow" cx="66" cy="48" r="26" fill="url(#gl)" opacity="0"/>
         <!-- the two electrodes the estimate actually depends on -->
         <circle class="site" id="fp1" cx="50" cy="40" r="5"/>
         <circle class="site" id="fp2" cx="82" cy="40" r="5"/>
         <text x="50" y="30" text-anchor="middle" font-size="9"
-              fill="currentColor" opacity="0.55">Fp1</text>
+              fill="currentColor" opacity="0.8">Fp1</text>
         <text x="82" y="30" text-anchor="middle" font-size="9"
-              fill="currentColor" opacity="0.55">Fp2</text>
+              fill="currentColor" opacity="0.8">Fp2</text>
       </svg>
       <div class="cap">Frontal activity</div>
     </div>
@@ -259,7 +287,13 @@ _HTML = r"""
 <script>
 const D = __PAYLOAD__;
 const S = D.styles[D.state] || D.styles["Stable"];
-const night = D.night;
+
+// The Night mode toggle forces dark, but the card also has to follow the
+// surrounding page: Streamlit renders dark when the OS prefers it, and the
+// light pastels washed out to grey against that dark chrome.
+const prefersDark =
+  window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+const night = D.night || prefersDark;
 
 const card = document.getElementById("card");
 if (night) card.classList.add("night");
@@ -285,10 +319,49 @@ orb.style.setProperty("--breath", S.breath + "s");
 orb.style.background = `radial-gradient(circle at 34% 30%, ${core} 0%, ${shade(core, -22)} 100%)`;
 orb.style.boxShadow = `0 12px 40px ${core}59`;
 
-// Mouth curve: smile when valence is positive, frown when negative.
+// --- face ----------------------------------------------------------------
+// Each feature is a readout of one value, so the expression can be explained
+// rather than just looked at:
+//   eyes  <- arousal  (calm narrows them, activation widens them)
+//   brows <- valence  (negative angles the inner ends down)
+//   mouth <- valence  (smile through flat to a small tense line)
 const v = Math.max(-1, Math.min(1, D.valence));
-const curve = 80 - v * 16;
-document.getElementById("mouth").setAttribute("d", `M 44 82 Q 66 ${curve} 88 82`);
+const a = Math.max(-1, Math.min(1, D.arousal));
+
+// Arousal drives eye aperture. Low arousal reads as a relaxed, softened eye;
+// high arousal widens it. Kept well short of a "startled" look — this is a
+// caregiver's screen, and alarm in the UI helps nobody.
+const a01 = Math.max(0, Math.min(1, (a + 1) / 2));
+const eyeRy = 3.6 + a01 * 3.6;
+const eyeRx = 5.2 + a01 * 1.0;
+["eyeL", "eyeR"].forEach((id) => {
+  const e = document.getElementById(id);
+  e.setAttribute("rx", eyeRx.toFixed(2));
+  e.setAttribute("ry", eyeRy.toFixed(2));
+});
+
+// Brows appear only as valence goes negative, and angle in proportion to it.
+// A flat brow at neutral would read as a drawn-on feature; fading them in
+// keeps the calm face clean.
+const tense = Math.max(0, -v);
+const browOp = tense * 0.85;
+const drop = tense * 5.5;
+const browL = document.getElementById("browL");
+const browR = document.getElementById("browR");
+browL.style.opacity = browOp;
+browR.style.opacity = browOp;
+browL.setAttribute("d", `M 40 ${44 - drop} L 56 ${41 + drop}`);
+browR.setAttribute("d", `M 76 ${41 + drop} L 92 ${44 - drop}`);
+
+// Mouth: a wider swing than before, so the states are actually distinct.
+// Arousal also shortens it slightly, which reads as tension without needing
+// an open, anguished mouth.
+const curve = 80 - v * 20;
+const half = 22 - a01 * 4;
+document.getElementById("mouth").setAttribute(
+  "d",
+  `M ${66 - half} 82 Q 66 ${curve} ${66 + half} 82`
+);
 
 document.getElementById("label").textContent = S.label;
 document.getElementById("desc").textContent = S.description;
@@ -303,10 +376,17 @@ fill.style.width = Math.round(((D.arousal + 1) / 2) * 100) + "%";
 
 if (!D.calibrated) document.getElementById("uncal").style.display = "block";
 
+// A held reading is the previous one repeated. Fade the card so it cannot be
+// mistaken for a live value, and stop the breathing that implies liveness.
+if (D.stale) {
+  document.getElementById("inner").style.opacity = "0.45";
+  orb.style.animationPlayState = "paused";
+}
+
 // --- head map ------------------------------------------------------------
 // The bloom tracks arousal only. EEG localises to the scalp, so nothing here
 // claims a body region the signal cannot speak to.
-const a01 = Math.max(0, Math.min(1, (D.arousal + 1) / 2));
+// Reuses a01 from the face block above — same 0..1 arousal, same meaning.
 document.getElementById("gl0").setAttribute("stop-color", core);
 document.getElementById("gl1").setAttribute("stop-color", core);
 

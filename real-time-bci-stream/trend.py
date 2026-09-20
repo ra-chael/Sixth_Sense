@@ -7,6 +7,7 @@ is the honest way to present a smoothed estimate.
 """
 
 import altair as alt
+import numpy as np
 import pandas as pd
 
 from emotion import MODERATE_AROUSAL
@@ -14,6 +15,70 @@ from hero import STATE_STYLE
 
 RAW_OPACITY = 0.28
 SMOOTH_WIDTH = 2.5
+
+
+def render_raw(window, labels, night=False):
+    """Raw EEG traces, stacked one channel per row.
+
+    st.line_chart sorts its legend alphabetically, which silently remapped
+    every trace to the wrong 10-20 site (C3 appeared first when the data's
+    first row is Fp1). Building it here keeps the montage order, and one row
+    per channel is readable where eight overlaid traces were not.
+    """
+    window = np.asarray(window)
+    n_ch, n_samples = window.shape
+
+    axis_color = "#AA9C8C" if night else "#7A6D5F"
+    frontal = {"Fp1", "Fp2"}
+
+    frames = []
+    for i, name in enumerate(labels):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "sample": np.arange(n_samples),
+                    "uV": window[i],
+                    "channel": name,
+                    "order": i,
+                    "role": "frontal (drives estimate)"
+                    if name in frontal
+                    else "other",
+                }
+            )
+        )
+    df = pd.concat(frames, ignore_index=True)
+
+    return (
+        alt.Chart(df)
+        .mark_line(strokeWidth=1)
+        .encode(
+            x=alt.X("sample:Q", title="sample (250 = 1 second)",
+                    axis=alt.Axis(labelColor=axis_color, titleColor=axis_color)),
+            y=alt.Y("uV:Q", title=None,
+                    axis=alt.Axis(labelColor=axis_color, tickCount=3)),
+            # Sorting on the row's index keeps electrode order, not A-Z.
+            row=alt.Row(
+                "channel:N",
+                sort=alt.EncodingSortField(field="order", order="ascending"),
+                title=None,
+                header=alt.Header(labelAngle=0, labelAlign="left",
+                                  labelColor=axis_color, labelFontSize=11),
+            ),
+            color=alt.Color(
+                "role:N",
+                title=None,
+                scale=alt.Scale(
+                    domain=["frontal (drives estimate)", "other"],
+                    range=["#DE9788" if night else "#CC8377",
+                           "#6E7B8A" if night else "#9AA7B4"],
+                ),
+                legend=alt.Legend(orient="top", labelColor=axis_color),
+            ),
+        )
+        .properties(height=38)
+        .configure_view(strokeWidth=0)
+        .configure(background="transparent")
+    )
 
 
 def render(trend_rows, state, night=False):

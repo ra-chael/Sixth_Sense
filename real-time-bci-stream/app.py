@@ -3,19 +3,23 @@ import time
 from collections import deque
 from datetime import datetime
 
+import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 import hero
+import theme
 import trend as trend_chart
 from simulated_data import generate_eeg_window
-from data_processing import check_signal_quality
+from data_processing import check_signal_quality, detect_artifact
+import emotion as emotion_module
 from emotion import CHANNEL_NAMES, EmotionTracker
 from board_connection import (
     connect_cyton,
     disconnect_cyton,
     capture_window,
+    capture_motion,
     DEFAULT_SERIAL_PORT,
 )
 
@@ -25,6 +29,10 @@ RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), "recordings")
 WINDOW_SAMPLES = 250
 TREND_LENGTH = 90
 BASELINE_WINDOWS = 20
+
+# Accelerometer magnitude, in g, above which the head counts as moving.
+# Provisional — it has not been calibrated against a worn headset yet.
+MOTION_THRESHOLD = 0.02
 
 HISTORY_COLUMNS = [
     "timestamp",
@@ -36,7 +44,10 @@ HISTORY_COLUMNS = [
     "note",
 ]
 
-st.set_page_config(page_title="Comfort/Discomfort Visualizer", layout="wide")
+st.set_page_config(
+    page_title="Comfort/Discomfort Visualizer", page_icon="🧠", layout="wide"
+)
+theme.apply()
 
 # --- session state -----------------------------------------------------------
 
@@ -53,6 +64,11 @@ defaults = {
     "muted": False,
     "night": False,
     "window": None,
+    "run_baseline": False,
+    "sim_manual": False,
+    "sim_arousal": 0.0,
+    "sim_valence": 0.0,
+    "sim_artifact": None,
 }
 for key, value in defaults.items():
     if key not in st.session_state:
@@ -65,10 +81,23 @@ if "history" not in st.session_state:
         st.session_state.history = []
 
 
-def read_window(simulation_mode, discomfort=False):
-    if simulation_mode:
-        return generate_eeg_window(discomfort=discomfort)
-    return capture_window(st.session_state.board, n_samples=WINDOW_SAMPLES)
+def read_window(simulation_mode, discomfort=False, manual=False):
+    """One window from whichever source is selected.
+
+    manual=False during calibration, so a baseline is always recorded against
+    a neutral signal rather than whatever the sliders happen to be set to.
+    """
+    if not simulation_mode:
+        return capture_window(st.session_state.board, n_samples=WINDOW_SAMPLES)
+
+    if manual and st.session_state.get("sim_manual"):
+        return generate_eeg_window(
+            arousal=st.session_state.get("sim_arousal", 0.0),
+            valence=st.session_state.get("sim_valence", 0.0),
+            artifact=st.session_state.get("sim_artifact"),
+        )
+
+    return generate_eeg_window(discomfort=discomfort)
 
 
 def channel_labels(window):
@@ -123,6 +152,13 @@ with st.sidebar:
                 st.rerun()
         else:
             st.success("Connected to Cyton")
+            # Shown rather than assumed: if this is not what the headset is
+            # actually doing, every band reading is wrong.
+            st.caption(
+                f"Sample rate: {emotion_module.SAMPLE_RATE} Hz · "
+                f"window: {WINDOW_SAMPLES} samples "
+                f"({WINDOW_SAMPLES / emotion_module.SAMPLE_RATE:.1f}s)"
+            )
             if st.button("Disconnect"):
                 disconnect_cyton(st.session_state.board)
                 st.session_state.board = None
@@ -158,7 +194,13 @@ with st.sidebar:
         f"Participant sits still, eyes open, for ~{BASELINE_WINDOWS} seconds."
     )
 
-    if st.button("Record resting baseline", disabled=not hardware_ready):
+    # Either the sidebar button or the inline "Fix" button on the dashboard
+    # starts the same routine.
+    start_baseline = st.button(
+        "Record resting baseline", disabled=not hardware_ready
+    ) or st.session_state.pop("run_baseline", False)
+
+    if start_baseline:
         progress = st.progress(0.0, text="Recording resting baseline…")
         windows = []
         for i in range(BASELINE_WINDOWS):
@@ -211,10 +253,44 @@ with dashboard_tab:
 
     with col_c:
         if simulation_mode and st.session_state.session_active:
-            st.session_state.sim_discomfort = st.toggle(
-                "Simulate discomfort",
-                value=st.session_state.get("sim_discomfort", False),
-                help="Feeds the discomfort variant of the simulated signal.",
+            st.session_state.sim_manual = st.toggle(
+                "Drive the signal manually",
+                value=st.session_state.get("sim_manual", False),
+                help="Set valence and arousal directly instead of using the "
+                "two-state discomfort preset.",
+            )
+            if not st.session_state.sim_manual:
+                st.session_state.sim_discomfort = st.toggle(
+                    "Simulate discomfort",
+                    value=st.session_state.get("sim_discomfort", False),
+                    help="Feeds the discomfort variant of the simulated signal.",
+                )
+
+    # Manual drive lives outside the columns so the sliders get full width.
+    if (
+        simulation_mode
+        and st.session_state.session_active
+        and st.session_state.get("sim_manual")
+    ):
+        with st.container(border=True):
+            st.caption(
+                "Synthesising a window with these targets. The reading below is "
+                "the estimator's own measurement of that signal, so it lags "
+                "while the moving average catches up."
+            )
+            sim_a, sim_v, sim_art = st.columns([2, 2, 1])
+            st.session_state.sim_arousal = sim_a.slider(
+                "Arousal", -1.0, 1.0, st.session_state.get("sim_arousal", 0.0), 0.05
+            )
+            st.session_state.sim_valence = sim_v.slider(
+                "Valence", -1.0, 1.0, st.session_state.get("sim_valence", 0.0), 0.05
+            )
+            st.session_state.sim_artifact = sim_art.selectbox(
+                "Inject artifact",
+                [None, "blink", "clench"],
+                format_func=lambda x: "none" if x is None else x,
+                help="Exercises the artifact guard — these windows should be "
+                "held rather than scored.",
             )
 
     # -- the live panel -------------------------------------------------------
@@ -225,11 +301,32 @@ with dashboard_tab:
     def live_panel():
         if st.session_state.session_active:
             window = read_window(
-                simulation_mode, st.session_state.get("sim_discomfort", False)
+                simulation_mode,
+                st.session_state.get("sim_discomfort", False),
+                manual=True,
             )
-            result = st.session_state.tracker.update(window)
+            # A blink or jaw clench puts a large transient in the same fast
+            # bands as real arousal, so such a window is held rather than
+            # scored — otherwise a facial twitch reads as distress.
+            artifact, artifact_fraction = detect_artifact(window)
+            if artifact:
+                result = st.session_state.tracker.hold("Movement or blink detected")
+            else:
+                result = st.session_state.tracker.update(window)
+
             result["signal_quality"] = check_signal_quality(window)
+            result["artifact_fraction"] = artifact_fraction
             result["timestamp"] = datetime.now().isoformat(timespec="seconds")
+
+            # Head movement, for context only. It is never allowed to change
+            # the estimate — it exists so a caregiver can tell a reading that
+            # rose while the patient was still from one that rose while they
+            # were moving.
+            result["motion"] = (
+                capture_motion(st.session_state.board)
+                if not simulation_mode and st.session_state.board is not None
+                else None
+            )
             st.session_state.latest = result
             st.session_state.window = window
 
@@ -276,13 +373,39 @@ with dashboard_tab:
             night=st.session_state.night,
             elapsed=elapsed_text(),
             calibrated=latest["calibrated"],
+            stale=latest.get("stale", False),
         )
 
-        if not latest["calibrated"]:
-            st.warning(
-                "No baseline recorded — valence and arousal are not referenced to "
-                "this participant. Record a resting baseline in the sidebar."
+        if latest.get("stale"):
+            st.info(
+                f"{latest.get('stale_reason', 'Holding last reading')} — showing "
+                "the previous reading until the signal recovers."
             )
+
+        # Head movement sits beside the reading rather than inside it: an
+        # arousal rise while the patient was still means something different
+        # from one while they were moving, and only a person can judge which.
+        motion = latest.get("motion")
+        if motion is not None:
+            moving = motion > MOTION_THRESHOLD
+            st.caption(
+                f"{'🔸' if moving else '🔹'} Head movement: "
+                f"{'detected' if moving else 'still'} ({motion:.3f} g) — context "
+                "only, this does not affect the estimate."
+            )
+
+        if not latest["calibrated"]:
+            # Without a baseline the state barely moves, which reads as a broken
+            # app rather than a missing step — so the fix is offered right here
+            # instead of pointing at the sidebar.
+            warn, act = st.columns([4, 1])
+            warn.warning(
+                "No baseline recorded — readings are not referenced to this "
+                "participant, so the state will barely move."
+            )
+            if act.button("Fix: record baseline", use_container_width=True):
+                st.session_state.run_baseline = True
+                st.rerun()
 
         left, right = st.columns([3, 2])
 
@@ -304,22 +427,89 @@ with dashboard_tab:
             st.subheader("Band power")
             alpha = latest["band_powers"]["alpha"]
             beta = latest["band_powers"]["beta"]
-            band_df = pd.DataFrame(
-                {"alpha": alpha, "beta": beta},
-                index=list(alpha.keys()),
-            )
-            st.bar_chart(band_df, height=240)
+            # A held reading carries no band powers; skip the chart rather than
+            # leaving the fragment, which would drop the panels below.
+            if not alpha:
+                st.caption("Waiting for a usable window…")
+            else:
+                # Explicit sort: the default would order the electrodes A-Z
+                # rather than by montage position.
+                band_df = pd.DataFrame(
+                    [
+                        {"channel": ch, "band": band, "power": powers[ch]}
+                        for band, powers in (("alpha", alpha), ("beta", beta))
+                        for ch in alpha
+                    ]
+                )
+                st.altair_chart(
+                    alt.Chart(band_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("channel:N", sort=list(alpha.keys()), title=None),
+                        y=alt.Y("power:Q", title=None),
+                        color=alt.Color(
+                            "band:N",
+                            title=None,
+                            scale=alt.Scale(
+                                domain=["alpha", "beta"],
+                                range=["#7FAFCF", "#BF9BD6"],
+                            ),
+                            legend=alt.Legend(orient="top"),
+                        ),
+                        xOffset="band:N",
+                    )
+                    .properties(height=240)
+                    .configure_view(strokeWidth=0)
+                    .configure(background="transparent"),
+                    use_container_width=True,
+                )
+                st.caption(
+                    "Alpha (8–13 Hz) and beta (13–30 Hz) per electrode. The "
+                    "estimate reads the Fp1/Fp2 pair; the rest are context."
+                )
 
-        with st.expander("Raw window and features"):
+        with st.expander("Raw EEG and how this reading was derived"):
+            st.caption(
+                "The last one-second window, one row per electrode in 10-20 "
+                "order. Fp1 and Fp2 are highlighted because the estimate is "
+                "derived from them; the other channels are recorded but do not "
+                "feed the current model."
+            )
             window_arr = np.asarray(st.session_state.window)
-            chart_df = pd.DataFrame(window_arr.T, columns=channel_labels(window_arr))
-            st.line_chart(chart_df, height=200)
-            st.json(
-                {
-                    k: v
-                    for k, v in latest.items()
-                    if k not in ("band_powers", "timestamp")
-                }
+            st.altair_chart(
+                trend_chart.render_raw(
+                    window_arr, channel_labels(window_arr), st.session_state.night
+                ),
+                use_container_width=True,
+            )
+
+            st.markdown("**How the numbers were derived**")
+            derive = st.columns(4)
+            derive[0].metric(
+                "Valence",
+                f"{latest['valence']:+.2f}",
+                help="ln(alpha at Fp2) − ln(alpha at Fp1), then baseline-referenced "
+                "and smoothed. Negative means relatively more right-frontal alpha, "
+                "associated with withdrawal.",
+            )
+            derive[1].metric(
+                "Arousal",
+                f"{latest['arousal']:+.2f}",
+                help="Frontal beta / (alpha + theta), baseline-referenced and "
+                "smoothed. Higher means more activated.",
+            )
+            derive[2].metric(
+                "Before smoothing",
+                f"{latest['arousal_raw']:+.2f}",
+                delta=f"{latest['arousal'] - latest['arousal_raw']:+.2f} from EMA",
+                help="This window's arousal before the moving average. The gap "
+                "shows how much smoothing is absorbing.",
+            )
+            derive[3].metric(
+                "Signal quality",
+                latest["signal_quality"],
+                help="Amplitude and variance heuristic. 'Poor' forces the state "
+                "to Uncertain rather than reporting a confident reading.",
             )
 
     live_panel()
